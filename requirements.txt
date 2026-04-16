@@ -1,0 +1,26 @@
+# SIABSEN — Sistem Absensi Cerdas
+# Instalasi: pip install -r requirements.txt
+
+# ── Core Vision & AI ───────────────────────────────────────────────────────────
+ultralytics>=8.2.0          # YOLOv8 — deteksi orang dari frame kamera
+opencv-python>=4.9.0        # Capture frame RTSP, image processing
+Pillow>=10.0.0              # Manipulasi gambar (generate QR, overlay frame)
+
+# ── QR Code ───────────────────────────────────────────────────────────────────
+qrcode[pil]>=7.4.2          # Generate QR Code mahasiswa
+pyzbar>=0.1.9               # Decode QR Code dari frame (butuh libzbar-dev di sistem)
+
+# ── Web API ───────────────────────────────────────────────────────────────────
+Flask>=3.0.0                # REST API server
+flask-cors>=4.0.0           # Cross-Origin Resource Sharing (akses dari dashboard)
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+numpy>=1.26.0               # Operasi array (dipakai OpenCV & YOLO)
+python-dateutil>=2.8.2      # Parsing tanggal fleksibel
+
+# ── Database ──────────────────────────────────────────────────────────────────
+mysql-connector-python>=8.0.33  # MySQL connector untuk Python
+
+# ── GPU Support (opsional, untuk YOLO lebih cepat) ────────────────────────────
+# Jika menggunakan GPU NVIDIA dengan CUDA 11.8:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118

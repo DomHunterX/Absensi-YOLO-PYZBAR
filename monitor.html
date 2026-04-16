@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIABSEN — Monitor Kehadiran</title>
+  <link rel="stylesheet" href="static/css/monitor.css">
+</head>
+<body>
+
+    <div id="audio-alert" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999; backdrop-filter: blur(2px);">
+        <div style="background: white; padding: 25px 35px; border-radius: 10px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); max-width: 400px;">
+            <h3 style="margin-top: 0; color: #1e293b; font-family: sans-serif;">Monitoring SIABSEN</h3>
+            <p style="color: #475569; margin-bottom: 20px; font-family: sans-serif; line-height: 1.5;">
+                Halaman ini membutuhkan izin untuk memutar suara notifikasi otomatis saat ada absensi baru.
+            </p>
+            <button onclick="aktifkanSuara()" style="padding: 10px 24px; background-color: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; transition: background 0.2s;">
+                OK, Mengerti
+            </button>
+        </div>
+    </div>
+
+  <div class="monitor-layout">
+
+    <!-- ===== KIRI: AREA KAMERA ===== -->
+    <main class="camera-section">
+
+      <!-- Header -->
+      <div class="header">
+        <div class="logo">
+          <img src="static/img/logo.png" alt="Logo" onerror="this.style.display='none'">
+          <div class="logo-text">
+            <div class="logo-title">SIABSEN</div>
+            <div class="logo-sub">Sistem Absensi Cerdas v2.4</div>
+          </div>
+        </div>
+
+        <div class="header-center">
+          <div class="clock" id="clock">00:00:00</div>
+          <div id="date-label">Memuat tanggal...</div>
+        </div>
+
+        <div class="header-right">
+          <div class="status-badge">
+            <div class="status-dot"></div>
+            Sistem Aktif
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div>
+            <div class="stat-value" id="stat-total">—</div>
+            <div class="stat-label">Total Mahasiswa</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <div>
+            <div class="stat-value" id="stat-hadir">—</div>
+            <div class="stat-label">Hadir Hari Ini</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div>
+            <div class="stat-value" id="stat-masih">—</div>
+            <div class="stat-label">Kehadiran Sesi 1</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Video Feed -->
+      <div class="video-container">
+        <img id="live-feed" src="" alt="">
+
+        <div class="video-label">
+          <div class="rec-dot"></div>
+          LIVE
+        </div>
+
+        <div class="video-overlay">
+          <div class="scan-frame">
+            <span></span>
+            <div class="scan-line"></div>
+          </div>
+          <div class="scan-hint">Posisikan QR Code di area ini</div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ===== KANAN: LOG ABSENSI ===== -->
+    <aside class="log-section">
+      <div class="log-header">
+        <div class="log-header-top">
+          <h2>Absensi Terkini</h2>
+          <span class="log-count" id="log-count">0</span>
+        </div>
+      </div>
+
+      <div class="log-list" id="recent-scans">
+        <div class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <path d="M14 14h.01M14 17h3M17 14h3M20 17v3M17 20h3"/>
+          </svg>
+          <p>Belum ada absensi hari ini</p>
+        </div>
+      </div>
+
+      <div class="log-footer">
+        <span class="footer-info" id="last-update">Menunggu data...</span>
+        <div class="polling-indicator">
+          <div class="polling-dot active" id="polling-dot"></div>
+          Live sync
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <script src="static/js/monitor.js"></script>
+</body>
+</html>

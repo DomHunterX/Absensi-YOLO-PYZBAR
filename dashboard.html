@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIABSEN — Sistem Absensi Cerdas</title>
+  <link rel="stylesheet" href="static/css/style.css">
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;500;600;700" rel="stylesheet">
+</head>
+
+<body>
+
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">
+          <img src="static/img/logo.png" alt="Logo" class="logo-icon">
+          <div>
+            <div class="logo-text">SIABSEN</div>
+            <div class="logo-sub">v2.4</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Utama</div>
+        <div class="nav-item active" onclick="showPage('dashboard')">
+          <span class="material-symbols-outlined icon">dashboard</span> Dashboard
+        </div>
+        <div class="nav-item" onclick="showPage('attendance')">
+          <span class="material-symbols-outlined icon">check_circle</span> Absensi Hari Ini
+          <span class="badge" id="sidebar-present">0</span>
+        </div>
+        <div class="nav-section">Data</div>
+        <div class="nav-item" onclick="showPage('mahasiswa')">
+          <span class="material-symbols-outlined icon">badge</span> Mahasiswa
+        </div>
+        <div class="nav-item" onclick="showPage('history')">
+          <span class="material-symbols-outlined icon">history</span> Riwayat
+        </div>
+        <div class="nav-section">Sistem</div>
+        <div class="nav-item" onclick="showPage('settings')">
+          <span class="material-symbols-outlined icon">settings</span> Pengaturan
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        Sistem Aktif<br>
+        <span id="current-time" style="font-family:var(--mono);font-size:10px;opacity:.6"></span>
+      </div>
+    </aside>
+
+    <main class="main">
+
+      <section id="page-dashboard">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Dashboard Absensi</div>
+            <div class="page-sub" id="today-label">Loading...</div>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost btn-sm" onclick="refreshData()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span> Refresh</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddMahasiswa()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span> Tambah Mahasiswa</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <!-- Hero Stat - Primary Focus -->
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">group</span>
+            <div class="stat-label">Total Mahasiswa</div>
+            <div class="stat-value" id="s-total">—</div>
+            <div class="stat-delta">Aktif terdaftar dalam sistem</div>
+          </div>
+          
+          <!-- Secondary Stats -->
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">task_alt</span>
+            <div class="stat-label">Hadir Hari Ini</div>
+            <div class="stat-value" id="s-present">—</div>
+            <div class="stat-delta"><span class="up" id="s-pct">—</span>% kehadiran</div>
+          </div>
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">person_off</span>
+            <div class="stat-label">Tidak Hadir</div>
+            <div class="stat-value" id="s-absent">—</div>
+            <div class="stat-delta">Belum absen masuk</div>
+          </div>
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">schedule</span>
+            <div class="stat-label">Masih di Kantor</div>
+            <div class="stat-value" id="s-inoffice">—</div>
+            <div class="stat-delta">Belum absen keluar</div>
+          </div>
+        </div>
+
+        <div class="three-col">
+          <div class="panel">
+            <div class="section-header">
+              <div>
+                <div class="section-title">Absensi Terkini</div>  
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="showPage('attendance')">Lihat Semua <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">arrow_forward</span></button>
+            </div>
+            <table class="att-table">
+              <thead>
+                <tr>
+                  <th>Mahasiswa</th>
+                  <th>Masuk</th>
+                  <th>Keluar</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="recent-tbody">
+                <tr>
+                  <td colspan="4" style="text-align:center;color:var(--muted);padding:20px">Memuat data...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+            <div class="panel">
+              <div class="section-header">
+                <div class="section-title">Tren 7 Hari</div>
+              </div>
+              <div class="trend-chart">
+                <div class="bar-chart" id="trend-chart"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-header">
+                <div class="section-title">Per Kelompok</div>
+              </div>
+              <div id="dept-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="page-attendance" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Absensi Hari Ini</div>
+            <div class="page-sub" id="att-date-label">—</div>
+          </div>
+          <div class="header-actions">
+            <input type="date" id="att-date-filter" class="form-input" style="width:160px;padding:7px 10px"
+              onchange="filterAttendance(this.value)">
+            <button class="btn btn-ghost btn-sm" onclick="exportCSV()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span> Export CSV</button>
+          </div>
+        </div>
+        <div class="panel">
+          <table class="att-table" id="full-att-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Mahasiswa</th>
+                <th>Kelompok</th>
+                <th>Jam Masuk</th>
+                <th>Jam Keluar</th>
+                <th>Durasi</th>
+                <th>Kamera</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="full-att-tbody">
+              <tr>
+                <td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Memuat...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-mahasiswa" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Data Mahasiswa</div>
+            <div class="page-sub">Manajemen mahasiswa dan QR Code</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddMahasiswa()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span> Tambah Mahasiswa</button>
+        </div>
+        <div class="panel">
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>Mahasiswa</th>
+                <th>Kelompok</th>
+                <th>Jurusan</th>
+                <th>Email</th>
+                <th>QR Code ID</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="mhs-tbody">
+              <tr>
+                <td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Memuat...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-history" style="display:none">
+        <div class="page-header">
+          <div class="page-title">Riwayat Absensi</div>
+        </div>
+        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div>
+              <label class="form-label">Dari Tanggal</label>
+              <input type="date" id="hist-start" class="form-input" style="width:150px;padding:7px 10px">
+            </div>
+            <div>
+              <label class="form-label">Sampai Tanggal</label>
+              <input type="date" id="hist-end" class="form-input" style="width:150px;padding:7px 10px">
+            </div>
+            <div style="align-self:flex-end">
+              <button class="btn btn-primary btn-sm" onclick="loadHistory()">Cari</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Mahasiswa</th>
+                <th>Kelompok</th>
+                <th>Masuk</th>
+                <th>Keluar</th>
+                <th>Durasi</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="hist-tbody">
+              <tr>
+                <td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Pilih rentang tanggal dan
+                  tekan Cari</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-settings" style="display:none">
+        <div class="page-title" style="margin-bottom:20px">Pengaturan Sistem</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div class="panel">
+            <div class="section-title" style="margin-bottom:16px">Konfigurasi YOLO</div>
+            <div class="form-row">
+              <label class="form-label">Model Path</label>
+              <input class="form-input" value="models/yolov8n.pt" readonly>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Confidence Threshold</label>
+              <input class="form-input" type="number" value="0.45" min="0.1" max="1" step="0.05">
+            </div>
+            <div class="form-row">
+              <label class="form-label">QR Cooldown (detik)</label>
+              <input class="form-input" type="number" value="30" min="5" max="300">
+            </div>
+            <button class="btn btn-primary btn-sm">Simpan Perubahan</button>
+          </div>
+          <div class="panel">
+            <div class="section-title" style="margin-bottom:16px">Konfigurasi RTSP</div>
+            <div class="form-row">
+              <label class="form-label">Frame Width</label>
+              <input class="form-input" type="number" value="1280">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Frame Height</label>
+              <input class="form-input" type="number" value="720">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Reconnect Delay (detik)</label>
+              <input class="form-input" type="number" value="5" min="1" max="30">
+            </div>
+            <button class="btn btn-primary btn-sm">Simpan Perubahan</button>
+          </div>
+          <div class="panel" style="grid-column:1/-1">
+            <div class="section-title" style="margin-bottom:16px">Tentang Sistem</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px;color:var(--muted)">
+              <div><strong style="color:var(--text)">Engine Deteksi</strong><br>YOLOv8 (Ultralytics)<br>Kelas: Person
+                (cls 0)</div>
+              <div><strong style="color:var(--text)">QR Code</strong><br>Generator: qrcode[pil]<br>Decoder: pyzbar
+                (libzbar)</div>
+              <div><strong style="color:var(--text)">Stream Video</strong><br>Protokol: RTSP/FFMPEG<br>OpenCV CAP_FFMPEG
+              </div>
+              <div><strong style="color:var(--text)">Database</strong><br>SQLite (lokal)<br>Thread-safe dengan lock
+              </div>
+              <div><strong style="color:var(--text)">API Server</strong><br>Flask 3.x + flask-cors<br>REST JSON API
+              </div>
+              <div><strong style="color:var(--text)">Versi</strong><br>SIABSEN v2.4<br>Python 3.11+</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  <div class="modal-backdrop" id="modal-mahasiswa">
+    <div class="modal">
+      <div class="modal-title">Tambah Mahasiswa Baru</div>
+      <div class="qr-result" id="qr-result-box">
+        <img id="qr-img-display" class="qr-img" width="200" alt="QR Code">
+        <div class="qr-code-label" id="qr-id-label">—</div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">Cetak dan berikan kartu ini ke mahasiswa</p>
+        <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="downloadQR()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span> Download QR</button>
+      </div>
+      <div id="mhs-form">
+        <div class="form-row-2">
+          <div class="form-row" style="margin:0">
+            <label class="form-label">ID Mahasiswa *</label>
+            <input class="form-input" id="f-id" placeholder="MHS001">
+          </div>
+          <div class="form-row" style="margin:0">
+            <label class="form-label">Nama Lengkap *</label>
+            <input class="form-input" id="f-name" placeholder="Nama Mahasiswa">
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <div class="form-row-2">
+          <div class="form-row" style="margin:0">
+            <label class="form-label">Kelompok *</label>
+            <input class="form-input" id="f-dept" placeholder="A">
+          </div>
+          <div class="form-row" style="margin:0">
+            <label class="form-label">Jurusan *</label>
+            <input class="form-input" id="f-pos" placeholder="Teknik Informatika">
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <div class="form-row">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="f-email" type="email" placeholder="mahasiswa@student.ac.id">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-mahasiswa')">Tutup</button>
+        <button class="btn btn-primary" id="mhs-submit-btn" onclick="submitMahasiswa()">Simpan & Generate QR</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast">
+    <div class="toast-title" id="toast-title"></div>
+    <div class="toast-msg" id="toast-msg"></div>
+  </div>
+
+  <script src="static/js/script.js"></script>
+</body>
+
+</html>
