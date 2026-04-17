@@ -1,4 +1,5 @@
 # SIABSEN — Sistem Absensi Mahasiswa
+*CATATAN UNTUK PENGEMBANG: SAAT INI MODEL YOLO YANG SUDAH DI TRAINING BELUM DI IMPORT*
 
 Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams** dan **MySQL database**.
 
@@ -351,6 +352,7 @@ Kemudian restart aplikasi untuk auto-create tabel.
 - [MIGRASI_MYSQL.md](MIGRASI_MYSQL.md) - Panduan setup MySQL
 - [MYSQL_SETUP.md](MYSQL_SETUP.md) - Dokumentasi lengkap MySQL
 - [TRAINING_GUIDE.md](TRAINING_GUIDE.md) - Panduan training YOLO
+- [TRAINING_GOOGLE_COLAB_GUIDE.md](TRAINING_COLAB.md) - Panduan training model roboflow ke Google Colab
 
 ## 📝 License
 
@@ -369,5 +371,12 @@ Contributions welcome! Please:
 
 **Version:** 3.0 (MySQL + Mahasiswa Mode)  
 **Last Updated:** 2026-04-16
+
+---
+
+## 💻🔥 Team Structure
+1. **Dody Setiawan = Project Manager, Backend**
+2. **Alwan Nabil Priyanto = Frontend, Databse**
+3. **Mala Fauziati = Quality Asurance, YOLO Trained**
 
 API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + MySQL**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time.
