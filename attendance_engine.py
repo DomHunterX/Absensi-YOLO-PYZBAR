@@ -268,6 +268,9 @@ class AttendanceProcessor:
     def _set_qr_cooldown(self, qr_data: str):
         self._qr_cooldowns[qr_data] = time.time()
 
+    # Jeda minimum antara check-in dan check-out (dalam detik): 1 jam = 3600
+    CHECK_OUT_MIN_SECONDS = 3600
+
     def _determine_action(self, mahasiswa_id: str) -> str:
         today = date.today().isoformat()
         row = self.db._execute(
@@ -278,6 +281,15 @@ class AttendanceProcessor:
         if not row or not row['check_in']:
             return 'check_in'
         if row['check_in'] and not row['check_out']:
+            # Hitung selisih waktu sejak check_in
+            check_in_time = datetime.fromisoformat(str(row['check_in']))
+            elapsed_seconds = (datetime.now() - check_in_time).total_seconds()
+            if elapsed_seconds < self.CHECK_OUT_MIN_SECONDS:
+                remaining = int(self.CHECK_OUT_MIN_SECONDS - elapsed_seconds)
+                logger.info(
+                    f"[{mahasiswa_id}] Cooldown check-out: sisa {remaining // 60} menit {remaining % 60} detik."
+                )
+                return 'cooldown'
             return 'check_out'
         return 'none'
 
@@ -323,6 +335,11 @@ class AttendanceProcessor:
                 action = self._determine_action(mahasiswa['id'])
                 if action == 'none':
                     logger.info(f"[{mahasiswa['name']}] Sudah selesai absen hari ini.")
+                    self._set_qr_cooldown(qr_data)  # tetap set cooldown 30 detik
+                    continue
+                if action == 'cooldown':
+                    logger.info(f"[{mahasiswa['name']}] Ditolak: masih dalam jeda 1 jam sejak check-in.")
+                    self._set_qr_cooldown(qr_data)  # blokir spam scan selama 30 detik
                     continue
 
                 # Ambil confidence tertinggi dari QR paper yang terdeteksi
@@ -424,7 +441,7 @@ if __name__ == '__main__':
 # RTSP CCTV
     processor.add_camera(
         camera_id='CAM-01',
-        rtsp_url='rtsp://admin:admin123456@ip.camera:8554/profile0',
+        rtsp_url='rtsp://admin:admin123456@192.168.1.86:8554/profile0',
         name='Pintu Utama',
         location='Lobby Lantai 1'
     )

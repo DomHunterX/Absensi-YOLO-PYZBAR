@@ -1,6 +1,6 @@
 const API_URL = '/api';
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 jam dalam milidetik
-const beepSound = new Audio('/static/sounds/beep.mp3');
+const beepSound = new Audio('/static/sounds/beep.mp3'); // File harus ada di: static/sounds/beep.mp3
 
 let lastActionCount = 0;
 let pollingActive = false;
@@ -228,21 +228,27 @@ let isAudioUnlocked = false;
 
 // Fungsi yang dipanggil saat tombol OK di alert diklik
 function aktifkanSuara() {
-    isAudioUnlocked = true;
-    
-    // Trik: Mainkan dengan volume 0 (tidak terdengar) untuk membuka kunci dari browser
-    beepSound.volume = 0; 
-    beepSound.play().then(() => {
-        beepSound.pause();
-        beepSound.currentTime = 0;
-        beepSound.volume = 1; // Kembalikan volume ke 100% untuk absen selanjutnya
-    }).catch(err => console.warn('Izin audio gagal dibuka:', err));
-    
-    // Hapus custom alert dari layar
     const alertBox = document.getElementById('audio-alert');
-    if (alertBox) {
-        alertBox.remove();
-    }
+    if (alertBox) alertBox.remove();
+
+    // Preload audio terlebih dahulu
+    beepSound.load();
+
+    // Trik: Mainkan dengan volume 0 untuk membuka izin audio browser
+    beepSound.volume = 0;
+    beepSound.play()
+        .then(() => {
+            beepSound.pause();
+            beepSound.currentTime = 0;
+            beepSound.volume = 1;
+            isAudioUnlocked = true;
+            console.info('[SIABSEN] Audio berhasil diaktifkan.');
+        })
+        .catch(err => {
+            // Jika file tidak ditemukan atau browser tolak, tandai gagal
+            isAudioUnlocked = false;
+            console.warn('[SIABSEN] Izin audio gagal — pastikan file ada di static/sounds/beep.mp3:', err);
+        });
 }
 
 // 3. Fungsi playBeep yang dipanggil HANYA saat ada absen baru
