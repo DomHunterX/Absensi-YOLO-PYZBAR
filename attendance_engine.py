@@ -27,7 +27,7 @@ logger = logging.getLogger('AttendanceEngine')
 
 SNAPSHOT_DIR = Path('data/snapshots')
 QR_DIR = Path('data/qrcodes')
-MODEL_PATH = Path('models/yolov8n.pt')
+MODEL_PATH = Path('models/qr_paper_model.pt')
 
 SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 QR_DIR.mkdir(parents=True, exist_ok=True)

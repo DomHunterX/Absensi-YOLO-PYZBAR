@@ -1,5 +1,4 @@
 # SIABSEN — Sistem Absensi Mahasiswa
-*CATATAN UNTUK PENGEMBANG: SAAT INI MODEL YOLO YANG SUDAH DI TRAINING BELUM DI IMPORT*
 
 Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams** dan **MySQL database**.
 
