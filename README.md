@@ -1,12 +1,12 @@
 # SIABSEN — Sistem Absensi Mahasiswa
 
-Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams** dan **MySQL database**.
+Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams**, **Upload Video MP4**, **Form Pengajuan Izin/Sakit**, dan **MySQL database**.
 
 ## 🎯 Cara Kerja Sistem
 
 ### Mode Deteksi: QR Code Paper
 
-1. **YOLO mendeteksi kertas QR code** dalam frame CCTV
+1. **YOLO mendeteksi kertas QR code** dalam frame CCTV/Video
 2. **Pyzbar decode QR code** dari area yang terdeteksi
 3. **Sistem validasi** QR code dengan database mahasiswa
 4. **Auto record** attendance (check-in/check-out)
@@ -15,8 +15,44 @@ Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi *
 ### Alur Proses
 
 ```
-CCTV Stream → YOLO Detection (QR Paper) → QR Decode → Mahasiswa Lookup → Record Attendance
+CCTV Stream / Video MP4 → YOLO Detection (QR Paper) → QR Decode → Mahasiswa Lookup → Record Attendance
 ```
+
+## ✨ Fitur Utama
+
+### 1. 📹 Real-time CCTV Monitoring
+- Deteksi QR code dari RTSP stream
+- Multi-camera support
+- Live preview dengan bounding box
+- Auto check-in/check-out
+
+### 2. 🎬 Upload & Deteksi Video MP4
+- Upload video rekaman untuk deteksi offline
+- Preview video dengan bounding box real-time (jsQR)
+- Pilih action: Check-in atau Check-out
+- Batch processing untuk multiple QR codes
+- Validasi duplikasi (mencegah check-in/out 2x di hari yang sama)
+- Hasil langsung masuk ke "Absensi Hari Ini"
+
+### 3. 📝 Form Pengajuan Izin/Sakit
+**Untuk Mahasiswa:**
+- Form pengajuan izin/sakit dengan upload bukti
+- Upload bukti (JPG, PNG, PDF) maksimal 10MB
+- Riwayat pengajuan dengan status real-time
+- Notifikasi approve/reject
+
+**Untuk Tim Disiplin (Timdis):**
+- Dashboard verifikasi pengajuan
+- Filter status: Pending/Disetujui/Ditolak
+- Approve/Reject dengan alasan
+- Auto-update status kehadiran mahasiswa
+- Preview bukti (gambar/PDF)
+
+### 4. 📊 Dashboard & Reporting
+- Statistik kehadiran real-time
+- Export data ke CSV/Excel
+- Riwayat absensi lengkap
+- Grafik kehadiran per kelompok
 
 ## ⚠️ PENTING: Training Model YOLO
 
@@ -100,12 +136,23 @@ Akses dashboard: **http://localhost:5000**
 ├── config_db.py              # Konfigurasi database MySQL
 ├── migrate_to_mysql.py       # Script migrasi dari SQLite (opsional)
 ├── dashboard.html            # Web dashboard
+├── monitor.html              # Live monitoring page
 ├── static/
-│   ├── css/style.css        # UI styling
-│   └── js/script.js         # Frontend logic
+│   ├── css/
+│   │   ├── style.css        # UI styling dashboard
+│   │   └── monitor.css      # UI styling monitor
+│   ├── js/
+│   │   ├── script.js        # Frontend logic dashboard
+│   │   └── monitor.js       # Frontend logic monitor
+│   ├── img/
+│   │   └── logo.png         # Logo aplikasi
+│   └── sounds/
+│       └── beep.mp3         # Sound notification
 ├── data/
 │   ├── qrcodes/             # Generated QR codes mahasiswa
-│   └── snapshots/           # Attendance snapshots
+│   ├── snapshots/           # Attendance snapshots
+│   ├── uploads/             # Uploaded video files (MP4)
+│   └── bukti_izin/          # Bukti pengajuan izin/sakit
 ├── models/
 │   └── yolov8n.pt          # YOLO model (perlu training!)
 ├── logs/
@@ -113,6 +160,8 @@ Akses dashboard: **http://localhost:5000**
 ├── MIGRASI_MYSQL.md         # Panduan setup MySQL
 ├── MYSQL_SETUP.md           # Dokumentasi lengkap MySQL
 ├── TRAINING_GUIDE.md        # Panduan training YOLO
+├── TRAINING_COLAB.md        # Panduan training di Google Colab
+├── UPDATE_VIDEO_TO_ATTENDANCE.md  # Dokumentasi fitur video upload
 └── requirements.txt
 ```
 
@@ -130,6 +179,22 @@ Akses dashboard: **http://localhost:5000**
 - `GET /api/attendance/history` - Riwayat absensi
 - `POST /api/attendance/manual` - Manual attendance
 
+### Video Upload (NEW! 🎬)
+- `POST /api/video/preview_frames` - Preview frame video dengan bounding box
+- `POST /api/video/process` - Upload & proses video MP4 untuk deteksi QR
+  - Form data: `video` (file), `action` (check_in/check_out)
+  - Response: deteksi QR, jumlah tercatat, mahasiswa yang dilewati
+
+### Izin/Sakit (NEW! 📝)
+- `POST /api/izin/submit` - Submit pengajuan izin/sakit (Mahasiswa)
+  - Form data: `mahasiswa_id`, `type` (izin/sakit), `date`, `keterangan`, `bukti` (file)
+- `GET /api/izin/list` - List semua pengajuan (Timdis)
+  - Query: `?status=pending|approved|rejected`
+- `POST /api/izin/verify` - Approve/Reject pengajuan (Timdis)
+  - JSON: `submission_id`, `action` (approve/reject), `verified_by`, `rejection_reason`
+- `GET /api/izin/mahasiswa/<id>` - Riwayat pengajuan per mahasiswa
+- `GET /api/izin/bukti/<filename>` - Download/view file bukti
+
 ### Cameras
 - `GET /api/cameras` - List semua kamera
 - `POST /api/cameras` - Tambah kamera
@@ -139,6 +204,91 @@ Akses dashboard: **http://localhost:5000**
 
 ### Dashboard
 - `GET /api/dashboard` - Data lengkap dashboard
+
+## 🎬 Upload Video MP4 untuk Deteksi
+
+### Cara Menggunakan
+
+1. **Buka Dashboard** → Menu "Upload Video MP4"
+2. **Pilih Action**: Check-in atau Check-out
+3. **Upload Video**: Pilih file MP4 (max 500MB)
+4. **Preview**: Video akan ditampilkan dengan bounding box real-time
+   - Putar video untuk melihat deteksi QR code
+   - Bounding box kuning muncul saat QR terdeteksi
+5. **Proses**: Klik "Upload & Proses Video"
+6. **Hasil**: Lihat hasil di "Absensi Hari Ini"
+
+### Fitur Video Upload
+
+✅ **Preview Real-time** dengan jsQR library  
+✅ **Bounding box kuning** seperti di attendance_engine.py  
+✅ **Auto-scale** untuk semua orientasi video (portrait/landscape)  
+✅ **Validasi duplikasi** - mencegah check-in/out 2x di hari yang sama  
+✅ **Batch processing** - deteksi multiple mahasiswa dalam 1 video  
+✅ **Skip duplicate** - mahasiswa yang sama hanya tercatat 1x  
+✅ **Detail report** - menampilkan mahasiswa yang dilewati dengan alasan  
+
+### Format Video yang Didukung
+
+- **Format**: MP4
+- **Codec**: H.264, H.265
+- **Resolusi**: Semua (auto-scale)
+- **Orientasi**: Portrait, Landscape, Square
+- **Ukuran**: Maksimal 500MB
+- **FPS**: Semua (diproses 5 frame/detik)
+
+### Tips Rekam Video
+
+1. **Pencahayaan**: Pastikan cukup terang
+2. **Jarak**: 50cm - 2m dari QR code
+3. **Fokus**: QR code harus jelas, tidak blur
+4. **Ukuran QR**: Minimal 5x5 cm
+5. **Kecepatan**: Jangan terlalu cepat, beri jeda 1-2 detik per QR
+
+## 📝 Form Pengajuan Izin/Sakit
+
+### Untuk Mahasiswa
+
+1. **Buka Dashboard** → Menu "Form Pengajuan"
+2. **Pilih Mahasiswa**: Dari dropdown
+3. **Pilih Jenis**: Izin atau Sakit
+4. **Isi Tanggal**: Tanggal ketidakhadiran
+5. **Isi Keterangan**: Minimal 10 karakter
+6. **Upload Bukti** (opsional): JPG, PNG, atau PDF (max 10MB)
+7. **Kirim Pengajuan**
+8. **Lihat Status**: Di tabel "Riwayat Pengajuan Saya"
+
+### Untuk Tim Disiplin (Timdis)
+
+1. **Buka Dashboard** → Menu "Verifikasi Timdis"
+2. **Lihat Pengajuan**: Filter berdasarkan status
+   - Pending (perlu verifikasi)
+   - Disetujui
+   - Ditolak
+3. **Verifikasi**:
+   - **Setujui**: Status kehadiran mahasiswa otomatis diupdate
+   - **Tolak**: Isi alasan penolakan
+4. **Lihat Bukti**: Klik icon attachment untuk preview
+
+### Status Pengajuan
+
+| Status | Keterangan | Aksi |
+|--------|-----------|------|
+| 🟡 **Pending** | Menunggu verifikasi Timdis | Timdis bisa approve/reject |
+| 🟢 **Disetujui** | Pengajuan diterima | Status attendance = izin/sakit |
+| 🔴 **Ditolak** | Pengajuan tidak diterima | Status tetap tidak hadir |
+
+### Alur Approve
+
+```
+Mahasiswa Submit → Pending → Timdis Approve → Update Attendance (status=izin/sakit)
+```
+
+### Alur Reject
+
+```
+Mahasiswa Submit → Pending → Timdis Reject (+ alasan) → Status tetap tidak hadir
+```
 
 ## 👥 Menambah Mahasiswa
 
@@ -239,12 +389,31 @@ CREATE TABLE attendance (
     check_in DATETIME,
     check_out DATETIME,
     date DATE NOT NULL,
-    status VARCHAR(20) DEFAULT 'present',
+    status VARCHAR(20) DEFAULT 'present',  -- present, izin, sakit
     camera_id VARCHAR(50),
     snapshot_path TEXT,
     yolo_confidence FLOAT,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Tabel: izin_submissions (NEW! 📝)
+```sql
+CREATE TABLE izin_submissions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    mahasiswa_id VARCHAR(50) NOT NULL,
+    submission_type ENUM('izin', 'sakit') NOT NULL,
+    date DATE NOT NULL,
+    keterangan TEXT NOT NULL,
+    bukti_path TEXT,
+    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    verified_by VARCHAR(100),
+    verified_at DATETIME,
+    rejection_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (mahasiswa_id) REFERENCES mahasiswa(id) ON DELETE CASCADE
 );
 ```
 
@@ -303,6 +472,38 @@ Kemudian restart aplikasi untuk auto-create tabel.
 3. Jarak optimal: 50cm - 2m dari kamera
 4. QR code minimal 5x5 cm
 
+### Video upload gagal
+
+**Solusi:**
+1. Cek format video: harus MP4
+2. Cek ukuran: maksimal 500MB
+3. Pastikan folder `data/uploads` ada dan writable
+4. Cek log: `tail -f logs/attendance.log`
+
+### Preview video tidak menampilkan bounding box
+
+**Solusi:**
+1. Pastikan jsQR library ter-load (cek console browser)
+2. QR code harus jelas dan tidak terlalu kecil
+3. Putar video untuk trigger deteksi
+4. Cek pencahayaan dalam video
+
+### Form izin/sakit tidak muncul
+
+**Solusi:**
+1. Refresh browser (Ctrl+F5)
+2. Cek console browser untuk error JavaScript
+3. Pastikan API server berjalan
+4. Cek endpoint: `curl http://localhost:5000/api/izin/list`
+
+### Bukti izin tidak bisa diupload
+
+**Solusi:**
+1. Cek format: hanya JPG, PNG, PDF
+2. Cek ukuran: maksimal 10MB
+3. Pastikan folder `data/bukti_izin` ada dan writable
+4. Cek permission folder
+
 ## 📈 Performance Tips
 
 1. **Gunakan GPU** untuk YOLO inference
@@ -346,12 +547,29 @@ Kemudian restart aplikasi untuk auto-create tabel.
 ## PATCH KEHADIRAN/SCANING QR-CODE
 /monitor
 
-## 📚 Dokumentasi Tambahan
+## 🆕 Changelog
 
-- [MIGRASI_MYSQL.md](MIGRASI_MYSQL.md) - Panduan setup MySQL
-- [MYSQL_SETUP.md](MYSQL_SETUP.md) - Dokumentasi lengkap MySQL
-- [TRAINING_GUIDE.md](TRAINING_GUIDE.md) - Panduan training YOLO
-- [TRAINING_GOOGLE_COLAB_GUIDE.md](TRAINING_COLAB.md) - Panduan training model roboflow ke Google Colab
+### Version 3.2 (2026-04-20)
+- ✅ **Form Pengajuan Izin/Sakit** dengan upload bukti
+- ✅ **Dashboard Verifikasi Timdis** untuk approve/reject
+- ✅ **Auto-update status attendance** saat pengajuan disetujui
+- ✅ **Preview bukti** (gambar/PDF) dalam modal
+- ✅ **Notifikasi real-time** untuk mahasiswa dan timdis
+
+### Version 3.1 (2026-04-18)
+- ✅ **Upload Video MP4** untuk deteksi offline
+- ✅ **Preview video real-time** dengan bounding box (jsQR)
+- ✅ **Validasi duplikasi** check-in/check-out
+- ✅ **Batch processing** multiple QR codes
+- ✅ **Auto-scale video** untuk semua orientasi
+- ✅ **Detail report** mahasiswa yang dilewati
+
+### Version 3.0 (2026-04-16)
+- ✅ Migrasi dari SQLite ke **MySQL**
+- ✅ Mode **Mahasiswa** (sebelumnya Employee)
+- ✅ Multi-camera RTSP support
+- ✅ Dashboard web responsive
+- ✅ Export data CSV/Excel
 
 ## 📝 License
 
@@ -368,14 +586,14 @@ Contributions welcome! Please:
 
 ---
 
-**Version:** 3.0 (MySQL + Mahasiswa Mode)  
-**Last Updated:** 2026-04-16
+**Version:** 3.2 (MySQL + Video Upload + Izin/Sakit)  
+**Last Updated:** 2026-04-20
 
 ---
 
 ## 💻🔥 Team Structure
 1. **Dody Setiawan = Project Manager, Backend**
-2. **Alwan Nabil Priyanto = Frontend, Databse**
-3. **Mala Fauziati = Quality Asurance, YOLO Trained**
+2. **Alwan Nabil Priyanto = Frontend, Database**
+3. **Mala Fauziati = Quality Assurance, YOLO Trained**
 
-API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + MySQL**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time.
+API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + Video Upload + Form Izin/Sakit + MySQL**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV atau video upload: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time. Dilengkapi dengan sistem pengajuan izin/sakit untuk mahasiswa dengan verifikasi dari Tim Disiplin.
