@@ -10,6 +10,8 @@
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
     rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;500;600;700" rel="stylesheet">
+  <!-- jsQR Library for QR Code Detection in Browser -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </head>
 
 <body>
@@ -42,6 +44,18 @@
         </div>
         <div class="nav-item" onclick="showPage('history')">
           <span class="material-symbols-outlined icon">history</span> Riwayat
+        </div>
+        <div class="nav-section">Analisis</div>
+        <div class="nav-item" onclick="showPage('video-upload')">
+          <span class="material-symbols-outlined icon">video_file</span> Upload Video MP4
+        </div>
+        <div class="nav-section">Izin & Sakit</div>
+        <div class="nav-item" onclick="showPage('izin-mahasiswa')">
+          <span class="material-symbols-outlined icon">edit_note</span> Form Pengajuan
+        </div>
+        <div class="nav-item" onclick="showPage('izin-timdis')">
+          <span class="material-symbols-outlined icon">fact_check</span> Verifikasi Timdis
+          <span class="badge badge-warning" id="sidebar-pending-izin">0</span>
         </div>
         <div class="nav-section">Sistem</div>
         <div class="nav-item" onclick="showPage('settings')">
@@ -252,6 +266,249 @@
         </div>
       </section>
 
+      <section id="page-video-upload" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Upload dan Deteksi Video MP4</div>
+            <div class="page-sub">Unggah video rekaman untuk deteksi QR Code otomatis</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="section-title" style="margin-bottom:16px">Upload Video</div>
+          <div class="form-row">
+            <label class="form-label">Pilih Action *</label>
+            <select id="video-action-select" class="form-input" style="width:200px">
+              <option value="check_in">Check-in (Masuk)</option>
+              <option value="check_out">Check-out (Keluar)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Pilih File Video (MP4)</label>
+            <input type="file" id="video-file-input" class="form-input" accept=".mp4,video/mp4" 
+                   onchange="handleVideoFileSelect(event)">
+          </div>
+          <div id="video-preview-section" style="display:none;margin-top:20px">
+            <div class="form-row">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <label class="form-label" style="margin:0">Preview</label>
+                <span id="preview-video-info" style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted)"></span>
+              </div>
+              <div class="video-preview-container">
+                <video id="preview-video-player" controls></video>
+                <canvas id="preview-canvas-overlay"></canvas>
+              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:6px">
+                <span style="color:#FFD700;font-weight:600">Bounding box kuning</span> = QR Code terdeteksi secara real-time &nbsp;·&nbsp; Deteksi menggunakan jsQR (sama seperti attendance_engine.py)
+              </div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:12px">
+              <button class="btn btn-primary" onclick="uploadAndProcessVideo()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">upload</span>
+                Upload & Proses Video
+              </button>
+              <button class="btn btn-ghost" onclick="cancelVideoUpload()">Batal</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="video-processing-panel" class="panel" style="display:none">
+          <div class="section-title" style="margin-bottom:16px">Status Pemrosesan</div>
+          <div id="processing-status" style="padding:20px;text-align:center">
+            <div class="spinner" style="margin:0 auto 16px"></div>
+            <div style="font-size:16px;font-weight:600;color:var(--text)">Memproses video...</div>
+            <div id="processing-progress" style="font-size:14px;color:var(--text-muted);margin-top:8px">0%</div>
+            
+            <!-- Preview dengan bounding box -->
+            <div style="margin-top:20px">
+              <canvas id="video-preview-canvas" style="max-width:100%;border:2px solid var(--border);border-radius:var(--radius-md);display:none"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div id="video-success-panel" class="panel" style="display:none">
+          <div class="section-header">
+            <div>
+              <div class="section-title">✅ Video Berhasil Diproses</div>
+              <div class="section-sub" id="success-summary">—</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" onclick="showPage('attendance')">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">list_alt</span>
+                Lihat Absensi Hari Ini
+              </button>
+            </div>
+          </div>
+          <div style="padding:20px;text-align:center">
+            <span class="material-symbols-outlined" style="font-size:80px;color:var(--success)">check_circle</span>
+            <p style="margin-top:16px;font-size:16px;color:var(--text)">
+              Semua data absensi telah tercatat ke database.<br>
+              Silakan cek di halaman <strong>"Absensi Hari Ini"</strong>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== FORM PENGAJUAN IZIN/SAKIT (MAHASISWA) ===== -->
+      <section id="page-izin-mahasiswa" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Form Pengajuan Izin/Sakit</div>
+            <div class="page-sub">Ajukan izin atau sakit untuk ketidakhadiran Anda</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="section-title" style="margin-bottom:16px">Form Pengajuan</div>
+          
+          <div class="form-row">
+            <label class="form-label">Mahasiswa *</label>
+            <select id="izin-mahasiswa-select" class="form-input">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Jenis Pengajuan *</label>
+            <select id="izin-type-select" class="form-input">
+              <option value="izin">Izin</option>
+              <option value="sakit">Sakit</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Tanggal *</label>
+            <input type="date" id="izin-date-input" class="form-input" required>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Keterangan *</label>
+            <textarea id="izin-keterangan-input" class="form-input" rows="4" 
+                      placeholder="Jelaskan alasan izin/sakit Anda..." required></textarea>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Upload Bukti (Opsional)</label>
+            <input type="file" id="izin-bukti-input" class="form-input" 
+                   accept=".jpg,.jpeg,.png,.pdf">
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+              Format: JPG, PNG, PDF · Maksimal 10MB
+            </div>
+          </div>
+
+          <div style="margin-top:20px;display:flex;gap:12px">
+            <button class="btn btn-primary" onclick="submitIzin()">
+              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">send</span>
+              Kirim Pengajuan
+            </button>
+            <button class="btn btn-ghost" onclick="resetIzinForm()">Reset</button>
+          </div>
+        </div>
+
+        <!-- Riwayat Pengajuan Mahasiswa -->
+        <div class="panel" style="margin-top:20px">
+          <div class="section-header">
+            <div class="section-title">Riwayat Pengajuan Saya</div>
+            <button class="btn btn-ghost btn-sm" onclick="loadMyIzinHistory()">
+              <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
+            </button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Jenis</th>
+                  <th>Keterangan</th>
+                  <th>Status</th>
+                  <th>Diverifikasi</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="my-izin-table-body">
+                <tr>
+                  <td colspan="6" style="text-align:center;color:var(--muted);padding:30px">
+                    Pilih mahasiswa untuk melihat riwayat
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== VERIFIKASI IZIN/SAKIT (TIMDIS) ===== -->
+      <section id="page-izin-timdis" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Verifikasi Pengajuan Izin/Sakit</div>
+            <div class="page-sub">Kelola dan verifikasi pengajuan dari mahasiswa</div>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost btn-sm" onclick="loadIzinSubmissions()">
+              <span class="material-symbols-outlined" style="font-size:16px">refresh</span> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Pending</div>
+            <div class="stat-value" id="stat-pending-izin">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Disetujui</div>
+            <div class="stat-value" id="stat-approved-izin">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ditolak</div>
+            <div class="stat-value" id="stat-rejected-izin">0</div>
+          </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="panel" style="margin-bottom:20px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <label style="font-weight:600;font-size:14px">Filter Status:</label>
+            <select id="izin-filter-status" class="form-input" style="width:200px" onchange="loadIzinSubmissions()">
+              <option value="">Semua</option>
+              <option value="pending" selected>Pending</option>
+              <option value="approved">Disetujui</option>
+              <option value="rejected">Ditolak</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tabel Pengajuan -->
+        <div class="panel">
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Mahasiswa</th>
+                  <th>Kelompok</th>
+                  <th>Jenis</th>
+                  <th>Tanggal</th>
+                  <th>Keterangan</th>
+                  <th>Bukti</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="izin-submissions-table-body">
+                <tr>
+                  <td colspan="9" style="text-align:center;color:var(--muted);padding:30px">
+                    Loading...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section id="page-settings" style="display:none">
         <div class="page-title" style="margin-bottom:20px">Pengaturan Sistem</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
@@ -348,6 +605,38 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('modal-mahasiswa')">Tutup</button>
         <button class="btn btn-primary" id="mhs-submit-btn" onclick="submitMahasiswa()">Simpan & Generate QR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Reject Izin -->
+  <div class="modal-backdrop" id="modal-reject-izin">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-title">Tolak Pengajuan</div>
+      <input type="hidden" id="reject-submission-id">
+      <div class="form-row" style="margin-top:16px">
+        <label class="form-label">Alasan Penolakan *</label>
+        <textarea id="reject-reason-input" class="form-input" rows="4"
+                  placeholder="Jelaskan alasan penolakan..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-reject-izin')">Batal</button>
+        <button class="btn btn-danger" onclick="confirmRejectIzin()">
+          <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">close</span>
+          Tolak Pengajuan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detail Bukti -->
+  <div class="modal-backdrop" id="modal-bukti">
+    <div class="modal" style="max-width:700px">
+      <div class="modal-title">Bukti Pengajuan</div>
+      <div id="bukti-content" style="margin-top:16px;text-align:center;min-height:200px">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-bukti')">Tutup</button>
       </div>
     </div>
   </div>

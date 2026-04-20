@@ -110,6 +110,29 @@ class DatabaseManager:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
         
+        # Tabel untuk pengajuan izin/sakit
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS izin_submissions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                mahasiswa_id VARCHAR(50) NOT NULL,
+                submission_type ENUM('izin', 'sakit') NOT NULL,
+                date DATE NOT NULL,
+                keterangan TEXT NOT NULL,
+                bukti_path TEXT,
+                status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+                verified_by VARCHAR(100),
+                verified_at DATETIME,
+                rejection_reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_mahasiswa (mahasiswa_id),
+                INDEX idx_date (date),
+                INDEX idx_status (status),
+                INDEX idx_created (created_at),
+                FOREIGN KEY (mahasiswa_id) REFERENCES mahasiswa(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -233,3 +256,146 @@ class DatabaseManager:
             "UPDATE camera_streams SET last_seen = %s WHERE id = %s",
             (datetime.now().isoformat(), cam_id)
         )
+
+    # ===== IZIN/SAKIT SUBMISSION METHODS =====
+    
+    def submit_izin(self, mahasiswa_id, submission_type, date_str, keterangan, bukti_path=None):
+        """Submit pengajuan izin/sakit oleh mahasiswa"""
+        query = """
+            INSERT INTO izin_submissions 
+            (mahasiswa_id, submission_type, date, keterangan, bukti_path, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+        """
+        
+        submission_id = self._execute(
+            query, 
+            (mahasiswa_id, submission_type, date_str, keterangan, bukti_path)
+        )
+        
+        logger.info(f"Pengajuan {submission_type} disubmit: {mahasiswa_id} untuk tanggal {date_str}")
+        return submission_id
+    
+    def get_all_izin_submissions(self, status=None):
+        """Get semua pengajuan izin/sakit (untuk Timdis)"""
+        if status:
+            query = """
+                SELECT i.*, m.name, m.kelompok, m.jurusan
+                FROM izin_submissions i
+                JOIN mahasiswa m ON i.mahasiswa_id = m.id
+                WHERE i.status = %s
+                ORDER BY i.created_at DESC
+            """
+            return self._execute(query, (status,), fetch_all=True) or []
+        else:
+            query = """
+                SELECT i.*, m.name, m.kelompok, m.jurusan
+                FROM izin_submissions i
+                JOIN mahasiswa m ON i.mahasiswa_id = m.id
+                ORDER BY i.created_at DESC
+            """
+            return self._execute(query, fetch_all=True) or []
+    
+    def get_izin_by_mahasiswa(self, mahasiswa_id):
+        """Get pengajuan izin/sakit by mahasiswa ID"""
+        query = """
+            SELECT i.*, m.name, m.kelompok
+            FROM izin_submissions i
+            JOIN mahasiswa m ON i.mahasiswa_id = m.id
+            WHERE i.mahasiswa_id = %s
+            ORDER BY i.created_at DESC
+        """
+        return self._execute(query, (mahasiswa_id,), fetch_all=True) or []
+    
+    def verify_izin(self, submission_id, action, verified_by, rejection_reason=None):
+        """Verifikasi pengajuan izin/sakit oleh Timdis (approve/reject)"""
+        now = datetime.now()
+        
+        # Get submission details
+        submission = self._execute(
+            "SELECT * FROM izin_submissions WHERE id = %s",
+            (submission_id,),
+            fetch_one=True
+        )
+        
+        if not submission:
+            return {'status': 'error', 'message': 'Pengajuan tidak ditemukan'}
+        
+        if submission['status'] != 'pending':
+            return {'status': 'error', 'message': f'Pengajuan sudah {submission["status"]}'}
+        
+        # Update submission status
+        if action == 'approve':
+            self._execute("""
+                UPDATE izin_submissions 
+                SET status = 'approved', verified_by = %s, verified_at = %s
+                WHERE id = %s
+            """, (verified_by, now.isoformat(), submission_id))
+            
+            # Update attendance status
+            mahasiswa_id = submission['mahasiswa_id']
+            date_str = submission['date'].isoformat() if hasattr(submission['date'], 'isoformat') else str(submission['date'])
+            submission_type = submission['submission_type']
+            
+            # Check if attendance record exists
+            existing = self._execute(
+                "SELECT * FROM attendance WHERE mahasiswa_id = %s AND date = %s",
+                (mahasiswa_id, date_str),
+                fetch_one=True
+            )
+            
+            if existing:
+                # Update existing record
+                self._execute("""
+                    UPDATE attendance 
+                    SET status = %s, notes = %s
+                    WHERE mahasiswa_id = %s AND date = %s
+                """, (submission_type, f"Disetujui: {submission['keterangan']}", mahasiswa_id, date_str))
+            else:
+                # Create new attendance record
+                self._execute("""
+                    INSERT INTO attendance 
+                    (mahasiswa_id, date, status, notes, camera_id)
+                    VALUES (%s, %s, %s, %s, 'IZIN-SYSTEM')
+                """, (mahasiswa_id, date_str, submission_type, f"Disetujui: {submission['keterangan']}"))
+            
+            logger.info(f"Pengajuan #{submission_id} APPROVED oleh {verified_by}")
+            return {'status': 'approved', 'message': 'Pengajuan disetujui'}
+            
+        elif action == 'reject':
+            self._execute("""
+                UPDATE izin_submissions 
+                SET status = 'rejected', verified_by = %s, verified_at = %s, rejection_reason = %s
+                WHERE id = %s
+            """, (verified_by, now.isoformat(), rejection_reason, submission_id))
+            
+            logger.info(f"Pengajuan #{submission_id} REJECTED oleh {verified_by}")
+            return {'status': 'rejected', 'message': 'Pengajuan ditolak'}
+        
+        return {'status': 'error', 'message': 'Action tidak valid'}
+    
+    def get_izin_stats(self):
+        """Get statistik pengajuan izin/sakit"""
+        stats = {}
+        
+        # Total pending
+        pending = self._execute(
+            "SELECT COUNT(*) as cnt FROM izin_submissions WHERE status = 'pending'",
+            fetch_one=True
+        )
+        stats['pending'] = pending['cnt'] if pending else 0
+        
+        # Total approved
+        approved = self._execute(
+            "SELECT COUNT(*) as cnt FROM izin_submissions WHERE status = 'approved'",
+            fetch_one=True
+        )
+        stats['approved'] = approved['cnt'] if approved else 0
+        
+        # Total rejected
+        rejected = self._execute(
+            "SELECT COUNT(*) as cnt FROM izin_submissions WHERE status = 'rejected'",
+            fetch_one=True
+        )
+        stats['rejected'] = rejected['cnt'] if rejected else 0
+        
+        return stats

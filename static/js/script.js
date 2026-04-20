@@ -15,13 +15,15 @@ const API = 'http://localhost:5000/api';
       document.getElementById('page-' + page).style.display = '';
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => {
-        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : 'pengaturan'))
+        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi timdis' : 'pengaturan'))
           n.classList.add('active');
       });
       currentPage = page;
       if (page === 'attendance') loadFullAttendance();
       if (page === 'mahasiswa') loadMahasiswa();
       if (page === 'cameras') loadCameras();
+      if (page === 'izin-mahasiswa') initIzinMahasiswaPage();
+      if (page === 'izin-timdis') loadIzinSubmissions();
     }
 
     // ─── Clock ──────────────────────────────────────────────────────────────────
@@ -211,6 +213,7 @@ const API = 'http://localhost:5000/api';
         const status = r.check_out ? '<span class="badge badge-green">Lengkap</span>'
           : r.check_in ? '<span class="badge badge-yellow">Hadir</span>'
             : '<span class="badge badge-red">Absen</span>';
+        
         return `<tr>
       <td style="color:var(--muted);font-family:var(--mono)">${i + 1}</td>
       <td><div class="mahasiswa-cell">
@@ -406,6 +409,333 @@ const API = 'http://localhost:5000/api';
       }).join('');
     }
 
+    // ─── Video Upload & Processing ──────────────────────────────────────────────
+    let selectedVideoFile = null;
+    let videoProcessingResults = [];
+    let previewVideoElement = null;
+    let previewCanvasElement = null;
+    let previewCanvasCtx = null;
+    let previewAnimationFrame = null;
+
+    function handleVideoFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      if (!file.type.includes('mp4')) {
+        toast('Format tidak didukung', 'Hanya file MP4 yang diperbolehkan', true);
+        event.target.value = '';
+        return;
+      }
+
+      selectedVideoFile = file;
+      document.getElementById('video-preview-section').style.display = 'block';
+      document.getElementById('video-success-panel').style.display = 'none';
+      toast('Video dipilih', `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+
+      // Load video untuk preview dengan deteksi real-time
+      loadVideoPreview(file);
+    }
+
+    function loadVideoPreview(file) {
+      const videoPlayer = document.getElementById('preview-video-player');
+      const canvas = document.getElementById('preview-canvas-overlay');
+      const info = document.getElementById('preview-video-info');
+      
+      // Stop previous preview if exists
+      if (previewAnimationFrame) {
+        cancelAnimationFrame(previewAnimationFrame);
+        previewAnimationFrame = null;
+      }
+
+      // Create object URL for video
+      const videoURL = URL.createObjectURL(file);
+      videoPlayer.src = videoURL;
+      
+      previewVideoElement = videoPlayer;
+      previewCanvasElement = canvas;
+      previewCanvasCtx = canvas.getContext('2d');
+
+      // Function to update canvas size to match video display exactly
+      const updateCanvasSize = () => {
+        const rect = videoPlayer.getBoundingClientRect();
+        // Set canvas to match actual video display size
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
+      };
+
+      // Setup canvas size when video metadata loaded
+      videoPlayer.onloadedmetadata = () => {
+        const duration = videoPlayer.duration;
+        const aspectRatio = videoPlayer.videoWidth / videoPlayer.videoHeight;
+        const orientation = aspectRatio > 1 ? 'Landscape' : aspectRatio < 1 ? 'Portrait' : 'Square';
+        
+        info.textContent = `${duration.toFixed(1)}s · ${videoPlayer.videoWidth}x${videoPlayer.videoHeight} · ${orientation}`;
+        
+        // Wait a bit for video to render with correct size, then update canvas
+        setTimeout(() => {
+          updateCanvasSize();
+          toast('Video siap', 'Putar video untuk melihat deteksi QR Code real-time');
+        }, 100);
+      };
+
+      // Update canvas size on window resize
+      let resizeTimeout;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          if (videoPlayer.videoWidth > 0) {
+            updateCanvasSize();
+          }
+        }, 100);
+      });
+
+      // Start detection when video plays
+      videoPlayer.onplay = () => {
+        updateCanvasSize(); // Ensure canvas is correct size before detection
+        detectQRInVideoFrame();
+      };
+
+      videoPlayer.onpause = () => {
+        if (previewAnimationFrame) {
+          cancelAnimationFrame(previewAnimationFrame);
+          previewAnimationFrame = null;
+        }
+      };
+
+      videoPlayer.onended = () => {
+        if (previewAnimationFrame) {
+          cancelAnimationFrame(previewAnimationFrame);
+          previewAnimationFrame = null;
+        }
+      };
+    }
+
+    function detectQRInVideoFrame() {
+      if (!previewVideoElement || previewVideoElement.paused || previewVideoElement.ended) {
+        return;
+      }
+
+      const video = previewVideoElement;
+      const canvas = previewCanvasElement;
+      const ctx = previewCanvasCtx;
+
+      // Clear previous drawings
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Create temporary canvas for QR detection at video's native resolution
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0);
+
+      // Calculate scale factors between video resolution and display size
+      const scaleX = canvas.width / video.videoWidth;
+      const scaleY = canvas.height / video.videoHeight;
+
+      // Try to detect QR codes using jsQR library
+      try {
+        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        
+        // Use jsQR if available
+        if (typeof jsQR !== 'undefined') {
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+          });
+          
+          if (code) {
+            // Scale coordinates from video resolution to canvas display size
+            const topLeft = {
+              x: code.location.topLeftCorner.x * scaleX,
+              y: code.location.topLeftCorner.y * scaleY
+            };
+            const topRight = {
+              x: code.location.topRightCorner.x * scaleX,
+              y: code.location.topRightCorner.y * scaleY
+            };
+            const bottomRight = {
+              x: code.location.bottomRightCorner.x * scaleX,
+              y: code.location.bottomRightCorner.y * scaleY
+            };
+            const bottomLeft = {
+              x: code.location.bottomLeftCorner.x * scaleX,
+              y: code.location.bottomLeftCorner.y * scaleY
+            };
+
+            // Draw bounding box with YELLOW color (matching attendance_engine.py)
+            ctx.strokeStyle = '#FFFF00';  // Yellow color
+            ctx.lineWidth = 3;
+            
+            // Draw polygon connecting the 4 corners (like cv2.polylines)
+            ctx.beginPath();
+            ctx.moveTo(topLeft.x, topLeft.y);
+            ctx.lineTo(topRight.x, topRight.y);
+            ctx.lineTo(bottomRight.x, bottomRight.y);
+            ctx.lineTo(bottomLeft.x, bottomLeft.y);
+            ctx.closePath();
+            ctx.stroke();
+            
+            // Calculate center point for label
+            const centerX = (topLeft.x + topRight.x + bottomLeft.x + bottomRight.x) / 4;
+            const centerY = (topLeft.y + topRight.y + bottomLeft.y + bottomRight.y) / 4;
+            
+            // Draw "QR VALID" label at center (matching attendance_engine.py style)
+            const labelText = "QR VALID";
+            ctx.font = 'bold 16px Arial';
+            const textMetrics = ctx.measureText(labelText);
+            const textWidth = textMetrics.width;
+            const textHeight = 16;
+            const padding = 5;
+            
+            // Background rectangle (yellow)
+            ctx.fillStyle = '#FFFF00';
+            ctx.fillRect(
+              centerX - textWidth/2 - padding, 
+              centerY - textHeight - padding,
+              textWidth + padding * 2, 
+              textHeight + padding * 2
+            );
+            
+            // Text (black)
+            ctx.fillStyle = '#000000';
+            ctx.fillText(labelText, centerX - textWidth/2, centerY - padding);
+          }
+        }
+      } catch (e) {
+        console.log('QR detection error:', e);
+      }
+
+      // Continue detection on next frame (30 FPS)
+      previewAnimationFrame = requestAnimationFrame(detectQRInVideoFrame);
+    }
+
+    function cancelVideoUpload() {
+      // Stop animation frame
+      if (previewAnimationFrame) {
+        cancelAnimationFrame(previewAnimationFrame);
+        previewAnimationFrame = null;
+      }
+
+      // Clear video
+      const videoPlayer = document.getElementById('preview-video-player');
+      if (videoPlayer.src) {
+        URL.revokeObjectURL(videoPlayer.src);
+        videoPlayer.src = '';
+      }
+
+      selectedVideoFile = null;
+      document.getElementById('video-file-input').value = '';
+      document.getElementById('video-preview-section').style.display = 'none';
+      document.getElementById('preview-video-info').innerHTML = '';
+      document.getElementById('video-success-panel').style.display = 'none';
+      
+      // Clear canvas
+      if (previewCanvasCtx) {
+        previewCanvasCtx.clearRect(0, 0, previewCanvasElement.width, previewCanvasElement.height);
+      }
+    }
+
+    async function uploadAndProcessVideo() {
+      if (!selectedVideoFile) {
+        toast('Pilih video terlebih dahulu', '', true);
+        return;
+      }
+
+      const action = document.getElementById('video-action-select').value;
+      const actionLabel = action === 'check_in' ? 'Check-in' : 'Check-out';
+      
+      const formData = new FormData();
+      formData.append('video', selectedVideoFile);
+      formData.append('action', action);
+
+      document.getElementById('video-processing-panel').style.display = 'block';
+      document.getElementById('video-success-panel').style.display = 'none';
+      document.getElementById('processing-progress').textContent = `Memproses video untuk ${actionLabel}...`;
+
+      try {
+        const response = await fetch(API + '/video/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          const recorded = result.data.recorded_count || 0;
+          const uniqueMhs = result.data.unique_mahasiswa || 0;
+          const detections = result.data.detections || [];
+          const skipped = result.data.skipped_count || 0;
+          const skippedMahasiswa = result.data.skipped_mahasiswa || [];
+          
+          // Tampilkan success panel
+          document.getElementById('video-processing-panel').style.display = 'none';
+          document.getElementById('video-success-panel').style.display = 'block';
+          
+          const summary = document.getElementById('success-summary');
+          let summaryHTML = `<strong>${actionLabel}</strong> · ${detections.length} deteksi · ${recorded} tercatat · ${uniqueMhs} mahasiswa`;
+          
+          if (skipped > 0) {
+            summaryHTML += ` · <span style="color:var(--warning)">${skipped} dilewati</span>`;
+          }
+          
+          summary.innerHTML = summaryHTML;
+          
+          // Update success panel content dengan detail
+          const successContent = document.querySelector('#video-success-panel > div:last-child');
+          let contentHTML = `
+            <span class="material-symbols-outlined" style="font-size:80px;color:var(--success)">check_circle</span>
+            <p style="margin-top:16px;font-size:16px;color:var(--text)">
+              ${recorded > 0 ? `<strong>${recorded} ${actionLabel}</strong> telah tercatat ke database.<br>` : ''}
+              ${skipped > 0 ? `<strong style="color:var(--warning)">${skipped} mahasiswa dilewati</strong> karena sudah ${actionLabel} hari ini.<br>` : ''}
+              Silakan cek di halaman <strong>"Absensi Hari Ini"</strong>
+            </p>
+          `;
+          
+          // Tampilkan daftar mahasiswa yang dilewati
+          if (skippedMahasiswa.length > 0) {
+            contentHTML += `
+              <div style="margin-top:20px;padding:16px;background:var(--warning-light);border-radius:var(--radius-md);text-align:left;max-width:500px;margin-left:auto;margin-right:auto">
+                <div style="font-weight:600;margin-bottom:8px;color:var(--warning);display:flex;align-items:center;gap:6px">
+                  <span class="material-symbols-outlined" style="font-size:18px">info</span>
+                  Mahasiswa yang Dilewati:
+                </div>
+                <ul style="margin:0;padding-left:20px;font-size:14px;color:var(--text-secondary)">
+                  ${skippedMahasiswa.map(m => `<li><strong>${m.name}</strong> - ${m.reason}</li>`).join('')}
+                </ul>
+              </div>
+            `;
+          }
+          
+          successContent.innerHTML = contentHTML;
+          
+          // Toast message
+          if (recorded > 0 && skipped > 0) {
+            toast('Video diproses dengan peringatan', 
+                  `${recorded} ${actionLabel} tercatat, ${skipped} dilewati (sudah ${actionLabel})`);
+          } else if (recorded > 0) {
+            toast('Video berhasil diproses!', 
+                  `${recorded} ${actionLabel} tercatat. Lihat di "Absensi Hari Ini"`);
+          } else if (skipped > 0) {
+            toast('Tidak ada yang tercatat', 
+                  `Semua mahasiswa sudah ${actionLabel} hari ini`, true);
+          }
+          
+          // Auto refresh absensi dan dashboard
+          loadFullAttendance();
+          loadDashboard();
+        } else {
+          toast('Gagal memproses video', result.message || 'Terjadi kesalahan', true);
+          document.getElementById('video-processing-panel').style.display = 'none';
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        toast('Gagal mengunggah video', 'Pastikan API server berjalan', true);
+        document.getElementById('video-processing-panel').style.display = 'none';
+      }
+    }
+
     // ─── Modals ─────────────────────────────────────────────────────────────────
     function openAddMahasiswa() {
       document.getElementById('qr-result-box').classList.remove('show');
@@ -546,6 +876,355 @@ const API = 'http://localhost:5000/api';
     setInterval(() => {
       if (currentPage === 'dashboard') loadDashboard();
       if (currentPage === 'attendance') loadFullAttendance();
+    }, 30000);
+
+    // ─── IZIN / SAKIT ────────────────────────────────────────────────────────────
+
+    function initIzinMahasiswaPage() {
+      // Populate mahasiswa dropdown
+      const sel = document.getElementById('izin-mahasiswa-select');
+      if (mahasiswaData.length === 0) {
+        loadMahasiswaForIzin();
+      } else {
+        populateIzinMahasiswaSelect(mahasiswaData);
+      }
+      // Set default date to today
+      document.getElementById('izin-date-input').value = new Date().toISOString().split('T')[0];
+    }
+
+    async function loadMahasiswaForIzin() {
+      try {
+        const res = await fetch(API + '/mahasiswa');
+        const result = await res.json();
+        if (result.success) {
+          mahasiswaData = result.data || [];
+          populateIzinMahasiswaSelect(mahasiswaData);
+        }
+      } catch (e) {
+        console.error('Error loading mahasiswa:', e);
+      }
+    }
+
+    function populateIzinMahasiswaSelect(data) {
+      const sel = document.getElementById('izin-mahasiswa-select');
+      sel.innerHTML = '<option value="">-- Pilih Mahasiswa --</option>';
+      data.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `${m.name} (${m.id}) — Kelompok ${m.kelompok}`;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function submitIzin() {
+      const mahasiswaId = document.getElementById('izin-mahasiswa-select').value;
+      const type = document.getElementById('izin-type-select').value;
+      const date = document.getElementById('izin-date-input').value;
+      const keterangan = document.getElementById('izin-keterangan-input').value.trim();
+      const buktiFile = document.getElementById('izin-bukti-input').files[0];
+
+      // Validasi
+      if (!mahasiswaId) return toast('Pilih mahasiswa terlebih dahulu', '', true);
+      if (!date) return toast('Tanggal wajib diisi', '', true);
+      if (!keterangan) return toast('Keterangan wajib diisi', '', true);
+      if (keterangan.length < 10) return toast('Keterangan terlalu singkat', 'Minimal 10 karakter', true);
+
+      // Validasi file bukti
+      if (buktiFile) {
+        const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+        if (!allowedTypes.includes(buktiFile.type)) {
+          return toast('Format file tidak didukung', 'Hanya JPG, PNG, PDF', true);
+        }
+        if (buktiFile.size > 10 * 1024 * 1024) {
+          return toast('File terlalu besar', 'Maksimal 10MB', true);
+        }
+      }
+
+      const formData = new FormData();
+      formData.append('mahasiswa_id', mahasiswaId);
+      formData.append('type', type);
+      formData.append('date', date);
+      formData.append('keterangan', keterangan);
+      if (buktiFile) formData.append('bukti', buktiFile);
+
+      // Disable button
+      const btn = document.querySelector('#page-izin-mahasiswa .btn-primary');
+      btn.disabled = true;
+      btn.textContent = 'Mengirim...';
+
+      try {
+        const res = await fetch(API + '/izin/submit', { method: 'POST', body: formData });
+        const result = await res.json();
+
+        if (result.success) {
+          toast('Pengajuan berhasil dikirim!',
+            `${type === 'izin' ? 'Izin' : 'Sakit'} untuk tanggal ${date} sedang diproses`);
+          resetIzinForm();
+          loadMyIzinHistory();
+          loadIzinPendingCount();
+        } else {
+          toast('Gagal mengirim pengajuan', result.message, true);
+        }
+      } catch (e) {
+        toast('Gagal mengirim', 'Pastikan server berjalan', true);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">send</span> Kirim Pengajuan';
+      }
+    }
+
+    function resetIzinForm() {
+      document.getElementById('izin-mahasiswa-select').value = '';
+      document.getElementById('izin-type-select').value = 'izin';
+      document.getElementById('izin-date-input').value = new Date().toISOString().split('T')[0];
+      document.getElementById('izin-keterangan-input').value = '';
+      document.getElementById('izin-bukti-input').value = '';
+      document.getElementById('my-izin-table-body').innerHTML =
+        '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Pilih mahasiswa untuk melihat riwayat</td></tr>';
+    }
+
+    async function loadMyIzinHistory() {
+      const mahasiswaId = document.getElementById('izin-mahasiswa-select').value;
+      if (!mahasiswaId) return;
+
+      const tbody = document.getElementById('my-izin-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+
+      try {
+        const res = await fetch(API + `/izin/mahasiswa/${mahasiswaId}`);
+        const result = await res.json();
+
+        if (!result.success || !result.data.submissions.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Belum ada pengajuan</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = result.data.submissions.map(s => {
+          const statusBadge = {
+            pending:  '<span class="badge badge-yellow">⏳ Pending</span>',
+            approved: '<span class="badge badge-green">✅ Disetujui</span>',
+            rejected: '<span class="badge badge-red">❌ Ditolak</span>'
+          }[s.status] || s.status;
+
+          const typeBadge = s.submission_type === 'izin'
+            ? '<span class="badge badge-blue">Izin</span>'
+            : '<span class="badge badge-orange">Sakit</span>';
+
+          const verifiedInfo = s.verified_by
+            ? `<div style="font-size:12px;color:var(--text-muted)">${s.verified_by}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</div>
+               ${s.rejection_reason ? `<div style="font-size:11px;color:var(--danger);margin-top:2px">"${s.rejection_reason}"</div>` : ''}`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          const buktiBtn = s.bukti_path
+            ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti('${s.id}','${s.bukti_path}')">
+                <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
+               </button>`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          return `<tr>
+            <td>${s.date}</td>
+            <td>${typeBadge}</td>
+            <td style="max-width:200px;white-space:normal;font-size:13px">${s.keterangan}</td>
+            <td>${statusBadge}</td>
+            <td>${verifiedInfo}</td>
+            <td>${buktiBtn}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+      }
+    }
+
+    // Timdis: Load semua pengajuan
+    async function loadIzinSubmissions() {
+      const status = document.getElementById('izin-filter-status')?.value || '';
+      const tbody = document.getElementById('izin-submissions-table-body');
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+
+      try {
+        const url = API + '/izin/list' + (status ? `?status=${status}` : '');
+        const res = await fetch(url);
+        const result = await res.json();
+
+        if (!result.success) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+          return;
+        }
+
+        const { submissions, stats } = result.data;
+
+        // Update stats
+        document.getElementById('stat-pending-izin').textContent = stats.pending;
+        document.getElementById('stat-approved-izin').textContent = stats.approved;
+        document.getElementById('stat-rejected-izin').textContent = stats.rejected;
+        document.getElementById('sidebar-pending-izin').textContent = stats.pending;
+        document.getElementById('sidebar-pending-izin').style.display = stats.pending > 0 ? '' : 'none';
+
+        if (!submissions.length) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">Tidak ada pengajuan</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = submissions.map(s => {
+          const statusBadge = {
+            pending:  '<span class="badge badge-yellow">⏳ Pending</span>',
+            approved: '<span class="badge badge-green">✅ Disetujui</span>',
+            rejected: '<span class="badge badge-red">❌ Ditolak</span>'
+          }[s.status] || s.status;
+
+          const typeBadge = s.submission_type === 'izin'
+            ? '<span class="badge badge-blue">Izin</span>'
+            : '<span class="badge badge-orange">Sakit</span>';
+
+          const buktiBtn = s.bukti_path
+            ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti(${s.id},'${s.bukti_path}')" title="Lihat Bukti">
+                <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
+               </button>`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          const actionBtns = s.status === 'pending'
+            ? `<div style="display:flex;gap:6px">
+                <button class="btn btn-sm" style="background:var(--success);color:#fff" onclick="approveIzin(${s.id})">
+                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check</span> Setujui
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="openRejectModal(${s.id})">
+                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">close</span> Tolak
+                </button>
+               </div>`
+            : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
+
+          return `<tr>
+            <td style="font-family:var(--font-mono);font-size:12px">#${s.id}</td>
+            <td>
+              <div style="font-weight:600">${s.name}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
+            </td>
+            <td><span class="badge badge-blue">${s.kelompok}</span></td>
+            <td>${typeBadge}</td>
+            <td style="font-family:var(--font-mono);font-size:13px">${s.date}</td>
+            <td style="max-width:180px;white-space:normal;font-size:13px">${s.keterangan}</td>
+            <td>${buktiBtn}</td>
+            <td>${statusBadge}</td>
+            <td>${actionBtns}</td>
+          </tr>`;
+        }).join('');
+
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+      }
+    }
+
+    async function approveIzin(submissionId) {
+      const verifiedBy = 'Timdis';
+      try {
+        const res = await fetch(API + '/izin/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submission_id: submissionId, action: 'approve', verified_by: verifiedBy })
+        });
+        const result = await res.json();
+        if (result.success) {
+          toast('Pengajuan disetujui', 'Status kehadiran mahasiswa telah diperbarui');
+          loadIzinSubmissions();
+          loadIzinPendingCount();
+        } else {
+          toast('Gagal menyetujui', result.message, true);
+        }
+      } catch (e) {
+        toast('Gagal', 'Pastikan server berjalan', true);
+      }
+    }
+
+    function openRejectModal(submissionId) {
+      document.getElementById('reject-submission-id').value = submissionId;
+      document.getElementById('reject-reason-input').value = '';
+      document.getElementById('modal-reject-izin').classList.add('show');
+    }
+
+    async function confirmRejectIzin() {
+      const submissionId = document.getElementById('reject-submission-id').value;
+      const reason = document.getElementById('reject-reason-input').value.trim();
+
+      if (!reason) return toast('Alasan penolakan wajib diisi', '', true);
+
+      try {
+        const res = await fetch(API + '/izin/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            submission_id: parseInt(submissionId),
+            action: 'reject',
+            verified_by: 'Timdis',
+            rejection_reason: reason
+          })
+        });
+        const result = await res.json();
+        if (result.success) {
+          closeModal('modal-reject-izin');
+          toast('Pengajuan ditolak', 'Mahasiswa akan diberitahu');
+          loadIzinSubmissions();
+          loadIzinPendingCount();
+        } else {
+          toast('Gagal menolak', result.message, true);
+        }
+      } catch (e) {
+        toast('Gagal', 'Pastikan server berjalan', true);
+      }
+    }
+
+    function viewBukti(submissionId, buktiPath) {
+      const ext = buktiPath.split('.').pop().toLowerCase();
+      const filename = buktiPath.split(/[\\/]/).pop();
+      const url = API + `/izin/bukti/${filename}`;
+      const content = document.getElementById('bukti-content');
+
+      if (['jpg', 'jpeg', 'png'].includes(ext)) {
+        content.innerHTML = `<img src="${url}" style="max-width:100%;max-height:500px;border-radius:var(--radius-md)">`;
+      } else if (ext === 'pdf') {
+        content.innerHTML = `
+          <div style="padding:20px;text-align:center">
+            <span class="material-symbols-outlined" style="font-size:64px;color:var(--danger)">picture_as_pdf</span>
+            <p style="margin-top:12px">File PDF tidak bisa ditampilkan langsung.</p>
+            <a href="${url}" target="_blank" class="btn btn-primary" style="margin-top:8px;display:inline-flex;gap:6px">
+              <span class="material-symbols-outlined" style="font-size:16px">open_in_new</span> Buka PDF
+            </a>
+          </div>`;
+      } else {
+        content.innerHTML = '<p style="color:var(--text-muted)">Format file tidak dikenali</p>';
+      }
+
+      document.getElementById('modal-bukti').classList.add('show');
+    }
+
+    async function loadIzinPendingCount() {
+      try {
+        const res = await fetch(API + '/izin/list?status=pending');
+        const result = await res.json();
+        if (result.success) {
+          const count = result.data.stats.pending;
+          const badge = document.getElementById('sidebar-pending-izin');
+          badge.textContent = count;
+          badge.style.display = count > 0 ? '' : 'none';
+        }
+      } catch (e) {}
+    }
+
+    // Load pending count on init
+    loadIzinPendingCount();
+
+    // Trigger loadMyIzinHistory when mahasiswa changes
+    document.getElementById('izin-mahasiswa-select')?.addEventListener('change', loadMyIzinHistory);
+
+    // ─── Auto refresh ────────────────────────────────────────────────────────────
+    function refreshData() {
+      loadDashboard();
+      toast('Data diperbarui', new Date().toLocaleTimeString('id-ID'));
+    }
+
+    setInterval(() => {
+      if (currentPage === 'dashboard') loadDashboard();
+      if (currentPage === 'attendance') loadFullAttendance();
+      if (currentPage === 'izin-timdis') loadIzinSubmissions();
     }, 30000);
 
     // ─── Init ────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ flask-cors>=4.0.0           # Cross-Origin Resource Sharing (akses dari dashboar
 # ── Utilities ─────────────────────────────────────────────────────────────────
 numpy>=1.26.0               # Operasi array (dipakai OpenCV & YOLO)
 python-dateutil>=2.8.2      # Parsing tanggal fleksibel
+requests>=2.31.0            # HTTP client untuk testing (opsional)
 
 # ── Database ──────────────────────────────────────────────────────────────────
 mysql-connector-python>=8.0.33  # MySQL connector untuk Python
