@@ -49,13 +49,14 @@
         <div class="nav-item" onclick="showPage('video-upload')">
           <span class="material-symbols-outlined icon">video_file</span> Upload Video MP4
         </div>
-        <div class="nav-section">Izin & Sakit</div>
-        <div class="nav-item" onclick="showPage('izin-mahasiswa')">
-          <span class="material-symbols-outlined icon">edit_note</span> Form Pengajuan
-        </div>
+        <div class="nav-section">Verifikasi Pengajuan</div>
         <div class="nav-item" onclick="showPage('izin-timdis')">
-          <span class="material-symbols-outlined icon">fact_check</span> Verifikasi Timdis
+          <span class="material-symbols-outlined icon">fact_check</span> Verifikasi Izin/Sakit
           <span class="badge badge-warning" id="sidebar-pending-izin">0</span>
+        </div>
+        <div class="nav-item" onclick="showPage('kehadiran-timdis')">
+          <span class="material-symbols-outlined icon">how_to_reg</span> Verifikasi Kehadiran
+          <span class="badge badge-warning" id="sidebar-pending-kehadiran">0</span>
         </div>
         <div class="nav-section">Sistem</div>
         <div class="nav-item" onclick="showPage('settings')">
@@ -176,7 +177,7 @@
           <table class="att-table" id="full-att-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th>No</th>
                 <th>Mahasiswa</th>
                 <th>Kelompok</th>
                 <th>Jam Masuk</th>
@@ -203,6 +204,35 @@
           </div>
           <button class="btn btn-primary btn-sm" onclick="openAddMahasiswa()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span> Tambah Mahasiswa</button>
         </div>
+        
+        <!-- Filter dan Pencarian -->
+        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1;min-width:200px">
+              <label class="form-label">Cari Nama Mahasiswa</label>
+              <input type="text" id="mhs-search" class="form-input" placeholder="Ketik nama mahasiswa..." style="padding:7px 10px" oninput="filterMahasiswa()">
+            </div>
+            <div>
+              <label class="form-label">Kelompok</label>
+              <select id="mhs-filter-kelompok" class="form-input" style="width:120px;padding:7px 10px" onchange="filterMahasiswa()">
+                <option value="">Semua</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Jurusan</label>
+              <select id="mhs-filter-jurusan" class="form-input" style="width:180px;padding:7px 10px" onchange="filterMahasiswa()">
+                <option value="">Semua</option>
+              </select>
+            </div>
+            <div style="align-self:flex-end">
+              <button class="btn btn-secondary btn-sm" onclick="resetMahasiswaFilter()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+        
         <div class="panel">
           <table class="att-table">
             <thead>
@@ -329,7 +359,7 @@
         <div id="video-success-panel" class="panel" style="display:none">
           <div class="section-header">
             <div>
-              <div class="section-title">✅ Video Berhasil Diproses</div>
+              <div class="section-title"><span class="material-symbols-outlined" style="font-size:20px;vertical-align:middle;color:var(--success)">check_circle</span> Video Berhasil Diproses</div>
               <div class="section-sub" id="success-summary">—</div>
             </div>
             <div style="display:flex;gap:8px">
@@ -349,100 +379,12 @@
         </div>
       </section>
 
-      <!-- ===== FORM PENGAJUAN IZIN/SAKIT (MAHASISWA) ===== -->
-      <section id="page-izin-mahasiswa" style="display:none">
-        <div class="page-header">
-          <div>
-            <div class="page-title">Form Pengajuan Izin/Sakit</div>
-            <div class="page-sub">Ajukan izin atau sakit untuk ketidakhadiran Anda</div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="section-title" style="margin-bottom:16px">Form Pengajuan</div>
-          
-          <div class="form-row">
-            <label class="form-label">Mahasiswa *</label>
-            <select id="izin-mahasiswa-select" class="form-input">
-              <option value="">-- Pilih Mahasiswa --</option>
-            </select>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">Jenis Pengajuan *</label>
-            <select id="izin-type-select" class="form-input">
-              <option value="izin">Izin</option>
-              <option value="sakit">Sakit</option>
-            </select>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">Tanggal *</label>
-            <input type="date" id="izin-date-input" class="form-input" required>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">Keterangan *</label>
-            <textarea id="izin-keterangan-input" class="form-input" rows="4" 
-                      placeholder="Jelaskan alasan izin/sakit Anda..." required></textarea>
-          </div>
-
-          <div class="form-row">
-            <label class="form-label">Upload Bukti (Opsional)</label>
-            <input type="file" id="izin-bukti-input" class="form-input" 
-                   accept=".jpg,.jpeg,.png,.pdf">
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
-              Format: JPG, PNG, PDF · Maksimal 10MB
-            </div>
-          </div>
-
-          <div style="margin-top:20px;display:flex;gap:12px">
-            <button class="btn btn-primary" onclick="submitIzin()">
-              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">send</span>
-              Kirim Pengajuan
-            </button>
-            <button class="btn btn-ghost" onclick="resetIzinForm()">Reset</button>
-          </div>
-        </div>
-
-        <!-- Riwayat Pengajuan Mahasiswa -->
-        <div class="panel" style="margin-top:20px">
-          <div class="section-header">
-            <div class="section-title">Riwayat Pengajuan Saya</div>
-            <button class="btn btn-ghost btn-sm" onclick="loadMyIzinHistory()">
-              <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
-            </button>
-          </div>
-          <div style="overflow-x:auto">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Tanggal</th>
-                  <th>Jenis</th>
-                  <th>Keterangan</th>
-                  <th>Status</th>
-                  <th>Diverifikasi</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody id="my-izin-table-body">
-                <tr>
-                  <td colspan="6" style="text-align:center;color:var(--muted);padding:30px">
-                    Pilih mahasiswa untuk melihat riwayat
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
       <!-- ===== VERIFIKASI IZIN/SAKIT (TIMDIS) ===== -->
       <section id="page-izin-timdis" style="display:none">
         <div class="page-header">
           <div>
             <div class="page-title">Verifikasi Pengajuan Izin/Sakit</div>
-            <div class="page-sub">Kelola dan verifikasi pengajuan dari mahasiswa</div>
+            <div class="page-sub">Kelola dan verifikasi pengajuan izin/sakit dari mahasiswa</div>
           </div>
           <div class="header-actions">
             <button class="btn btn-ghost btn-sm" onclick="loadIzinSubmissions()">
@@ -483,10 +425,9 @@
         <!-- Tabel Pengajuan -->
         <div class="panel">
           <div style="overflow-x:auto">
-            <table class="data-table">
+            <table class="att-table">
               <thead>
                 <tr>
-                  <th>ID</th>
                   <th>Mahasiswa</th>
                   <th>Kelompok</th>
                   <th>Jenis</th>
@@ -498,6 +439,78 @@
                 </tr>
               </thead>
               <tbody id="izin-submissions-table-body">
+                <tr>
+                  <td colspan="8" style="text-align:center;color:var(--muted);padding:30px">
+                    Loading...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== VERIFIKASI PENGAJUAN KEHADIRAN (TIMDIS) ===== -->
+      <section id="page-kehadiran-timdis" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Verifikasi Pengajuan Kehadiran</div>
+            <div class="page-sub">Kelola dan verifikasi pengajuan kehadiran dari mahasiswa</div>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost btn-sm" onclick="loadKehadiranSubmissions()">
+              <span class="material-symbols-outlined" style="font-size:16px">refresh</span> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px">
+          <div class="stat-card">
+            <div class="stat-label">Pending</div>
+            <div class="stat-value" id="stat-pending-kehadiran">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Disetujui</div>
+            <div class="stat-value" id="stat-approved-kehadiran">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ditolak</div>
+            <div class="stat-value" id="stat-rejected-kehadiran">0</div>
+          </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="panel" style="margin-bottom:20px">
+          <div style="display:flex;gap:12px;align-items:center">
+            <label style="font-weight:600;font-size:14px">Filter Status:</label>
+            <select id="kehadiran-filter-status" class="form-input" style="width:200px" onchange="loadKehadiranSubmissions()">
+              <option value="">Semua</option>
+              <option value="pending" selected>Pending</option>
+              <option value="approved">Disetujui</option>
+              <option value="rejected">Ditolak</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tabel Pengajuan Kehadiran -->
+        <div class="panel">
+          <div style="overflow-x:auto">
+            <table class="att-table">
+              <thead>
+                <tr>
+                  <th>Mahasiswa</th>
+                  <th>Kelompok</th>
+                  <th>Tanggal</th>
+                  <th>Jam Masuk</th>
+                  <th>Jam Keluar</th>
+                  <th>Keterangan</th>
+                  <th>Bukti</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="kehadiran-submissions-table-body">
                 <tr>
                   <td colspan="9" style="text-align:center;color:var(--muted);padding:30px">
                     Loading...
@@ -516,33 +529,44 @@
             <div class="section-title" style="margin-bottom:16px">Konfigurasi YOLO</div>
             <div class="form-row">
               <label class="form-label">Model Path</label>
-              <input class="form-input" value="models/yolov8n.pt" readonly>
+              <div style="display:flex;gap:8px">
+                <input id="setting-model-path" class="form-input" value="models/yolov8n.pt" placeholder="models/yolov8n.pt" style="flex:1">
+                <button class="btn btn-secondary btn-sm" onclick="browseModels()" style="white-space:nowrap">
+                  <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">folder_open</span>
+                  Browse
+                </button>
+              </div>
+              <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Contoh: models/yolov8n.pt, models/custom_qr.pt</small>
             </div>
             <div class="form-row">
               <label class="form-label">Confidence Threshold</label>
-              <input class="form-input" type="number" value="0.45" min="0.1" max="1" step="0.05">
+              <input id="setting-yolo-conf" class="form-input" type="number" value="0.45" min="0.1" max="1" step="0.05">
             </div>
             <div class="form-row">
               <label class="form-label">QR Cooldown (detik)</label>
-              <input class="form-input" type="number" value="30" min="5" max="300">
+              <input id="setting-qr-cooldown" class="form-input" type="number" value="30" min="5" max="300">
             </div>
-            <button class="btn btn-primary btn-sm">Simpan Perubahan</button>
+            <button class="btn btn-primary btn-sm" onclick="saveYoloSettings()">Simpan Perubahan</button>
           </div>
           <div class="panel">
             <div class="section-title" style="margin-bottom:16px">Konfigurasi RTSP</div>
             <div class="form-row">
               <label class="form-label">Frame Width</label>
-              <input class="form-input" type="number" value="1280">
+              <input id="setting-frame-width" class="form-input" type="number" value="1280" min="320" max="3840">
             </div>
             <div class="form-row">
               <label class="form-label">Frame Height</label>
-              <input class="form-input" type="number" value="720">
+              <input id="setting-frame-height" class="form-input" type="number" value="720" min="240" max="2160">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Frame FPS</label>
+              <input id="setting-frame-fps" class="form-input" type="number" value="30" min="1" max="60">
             </div>
             <div class="form-row">
               <label class="form-label">Reconnect Delay (detik)</label>
-              <input class="form-input" type="number" value="5" min="1" max="30">
+              <input id="setting-reconnect-delay" class="form-input" type="number" value="5" min="1" max="30">
             </div>
-            <button class="btn btn-primary btn-sm">Simpan Perubahan</button>
+            <button class="btn btn-primary btn-sm" onclick="saveRtspSettings()">Simpan Perubahan</button>
           </div>
           <div class="panel" style="grid-column:1/-1">
             <div class="section-title" style="margin-bottom:16px">Tentang Sistem</div>
@@ -553,7 +577,7 @@
                 (libzbar)</div>
               <div><strong style="color:var(--text)">Stream Video</strong><br>Protokol: RTSP/FFMPEG<br>OpenCV CAP_FFMPEG
               </div>
-              <div><strong style="color:var(--text)">Database</strong><br>SQLite (lokal)<br>Thread-safe dengan lock
+              <div><strong style="color:var(--text)">Database</strong><br>MySQL<br>Thread-safe dengan lock
               </div>
               <div><strong style="color:var(--text)">API Server</strong><br>Flask 3.x + flask-cors<br>REST JSON API
               </div>
@@ -637,6 +661,24 @@
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('modal-bukti')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Browse Models -->
+  <div class="modal-backdrop" id="modal-browse-models">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-title">Pilih Model YOLO</div>
+      <div style="margin-top:16px">
+        <div id="models-list" style="max-height:400px;overflow-y:auto">
+          <div style="text-align:center;padding:40px;color:var(--muted)">
+            <div class="spinner"></div>
+            <p style="margin-top:12px">Memuat daftar model...</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-browse-models')">Batal</button>
       </div>
     </div>
   </div>

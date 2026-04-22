@@ -27,18 +27,49 @@ logger = logging.getLogger('AttendanceEngine')
 
 SNAPSHOT_DIR = Path('data/snapshots')
 QR_DIR = Path('data/qrcodes')
-MODEL_PATH = Path('models/qr_paper_model.pt')
+SETTINGS_FILE = Path('data/settings.json')
 
 SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 QR_DIR.mkdir(parents=True, exist_ok=True)
 Path('data').mkdir(parents=True, exist_ok=True)
 Path('logs').mkdir(exist_ok=True)
 
-YOLO_CONF_THRESHOLD = 0.3
-QR_COOLDOWN = 30
-FRAME_WIDTH = 1080
-FRAME_HEIGHT = 720
-FRAME_FPS = 30  # Target FPS untuk kamera CCTV
+def load_settings():
+    """Load settings from JSON file or return defaults"""
+    if not SETTINGS_FILE.exists():
+        return {
+            'yolo': {
+                'model_path': 'models/yolov8n.pt',
+                'confidence': 0.3,
+                'qr_cooldown': 30
+            },
+            'rtsp': {
+                'frame_width': 1080,
+                'frame_height': 720,
+                'frame_fps': 30,
+                'reconnect_delay': 5
+            }
+        }
+    
+    try:
+        with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading settings: {e}")
+        return {
+            'yolo': {'model_path': 'models/yolov8n.pt', 'confidence': 0.3, 'qr_cooldown': 30},
+            'rtsp': {'frame_width': 1080, 'frame_height': 720, 'frame_fps': 30, 'reconnect_delay': 5}
+        }
+
+# Load settings
+_settings = load_settings()
+MODEL_PATH = Path(_settings['yolo'].get('model_path', 'models/yolov8n.pt'))
+YOLO_CONF_THRESHOLD = _settings['yolo'].get('confidence', 0.3)
+QR_COOLDOWN = _settings['yolo'].get('qr_cooldown', 30)
+FRAME_WIDTH = _settings['rtsp'].get('frame_width', 1080)
+FRAME_HEIGHT = _settings['rtsp'].get('frame_height', 720)
+FRAME_FPS = _settings['rtsp'].get('frame_fps', 30)
+RECONNECT_DELAY = _settings['rtsp'].get('reconnect_delay', 5)
 
 class QRCodeGenerator:
     @staticmethod
@@ -99,7 +130,7 @@ class RTSPCameraStream:
         self.fps = 0
         self.connected = False
         self._thread = None
-        self._reconnect_delay = 5
+        self._reconnect_delay = RECONNECT_DELAY
         self._frame_count = 0
         self._last_fps_time = time.time()
 

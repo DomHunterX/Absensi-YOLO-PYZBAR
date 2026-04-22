@@ -141,7 +141,7 @@ function renderRecentScans(attendanceData) {
         if (inCooldown) {
             cooldownBadge = `
                 <div style="margin-top:6px;font-size:10px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;padding:3px 8px;display:inline-block;">
-                    ⏳ Bisa keluar dalam ${formatCooldown(remainingSec)}
+                    <span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">schedule</span> Bisa keluar dalam ${formatCooldown(remainingSec)}
                 </div>`;
         }
 

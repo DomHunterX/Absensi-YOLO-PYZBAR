@@ -72,6 +72,10 @@ def video_stream(camera_id):
 def index():
     return send_file('dashboard.html')
 
+@app.route('/mahasiswa')
+def mahasiswa_portal():
+    return send_file('mahasiswa.html')
+
 @app.route('/monitor')
 def monitor():
     return send_file('monitor.html')
@@ -507,7 +511,7 @@ def save_video_frame(frame, mahasiswa_id: str, frame_number: int, video_path: st
 def submit_izin():
     """
     Endpoint untuk mahasiswa submit pengajuan izin/sakit.
-    Form data: mahasiswa_id, type (izin/sakit), date, keterangan, bukti (file)
+    Form data: mahasiswa_id, type (izin/sakit), date, keterangan, bukti (file) - WAJIB
     """
     try:
         mahasiswa_id = request.form.get('mahasiswa_id')
@@ -531,29 +535,33 @@ def submit_izin():
         if not mahasiswa:
             return err('Mahasiswa tidak ditemukan')
         
-        # Handle file upload (optional)
+        # Handle file upload - WAJIB
         bukti_path = None
-        if 'bukti' in request.files:
-            file = request.files['bukti']
-            if file and file.filename != '':
-                if not allowed_bukti_file(file.filename):
-                    return err('Format file tidak didukung. Hanya JPG, PNG, PDF yang diperbolehkan')
-                
-                # Check file size
-                file.seek(0, os.SEEK_END)
-                file_size = file.tell()
-                file.seek(0)
-                
-                if file_size > MAX_BUKTI_SIZE:
-                    return err('Ukuran file terlalu besar. Maksimal 10MB')
-                
-                # Save file
-                filename = secure_filename(file.filename)
-                timestamp = time.strftime('%Y%m%d_%H%M%S')
-                filename = f"{timestamp}_{mahasiswa_id}_{filename}"
-                filepath = app.config['BUKTI_FOLDER'] / filename
-                file.save(str(filepath))
-                bukti_path = str(filepath)
+        if 'bukti' not in request.files:
+            return err('Bukti wajib diupload (surat dokter, surat izin, dll)')
+        
+        file = request.files['bukti']
+        if not file or file.filename == '':
+            return err('Bukti wajib diupload (surat dokter, surat izin, dll)')
+        
+        if not allowed_bukti_file(file.filename):
+            return err('Format file tidak didukung. Hanya JPG, PNG, PDF yang diperbolehkan')
+        
+        # Check file size
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        
+        if file_size > MAX_BUKTI_SIZE:
+            return err('Ukuran file terlalu besar. Maksimal 10MB')
+        
+        # Save file
+        filename = secure_filename(file.filename)
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        filename = f"{timestamp}_{mahasiswa_id}_{filename}"
+        filepath = app.config['BUKTI_FOLDER'] / filename
+        file.save(str(filepath))
+        bukti_path = str(filepath)
         
         # Submit to database
         submission_id = db.submit_izin(
@@ -679,6 +687,331 @@ def get_bukti_file(filename):
     except Exception as e:
         logger.error(f"Error get bukti file: {e}")
         return err(f'Gagal mengambil file: {str(e)}', 500)
+
+
+# ─── Kehadiran Manual Endpoints ──────────────────────────────────────────────────
+@app.route('/api/kehadiran/submit', methods=['POST'])
+def submit_kehadiran_manual():
+    """
+    Endpoint untuk mahasiswa submit pengajuan kehadiran manual.
+    Bukti WAJIB diupload. Jam masuk dan jam keluar WAJIB diisi.
+    """
+    try:
+        mahasiswa_id = request.form.get('mahasiswa_id')
+        date = request.form.get('date')
+        check_in_time = request.form.get('check_in_time')
+        check_out_time = request.form.get('check_out_time')
+        keterangan = request.form.get('keterangan')
+        
+        if not all([mahasiswa_id, date, check_in_time, check_out_time, keterangan]):
+            return err('Field wajib: mahasiswa_id, date, check_in_time, check_out_time, keterangan')
+        
+        # Handle file upload - WAJIB
+        bukti_path = None
+        if 'bukti' not in request.files:
+            return err('Bukti wajib diupload (foto selfie di lokasi, foto kegiatan, dll)')
+        
+        file = request.files['bukti']
+        if not file or file.filename == '':
+            return err('Bukti wajib diupload (foto selfie di lokasi, foto kegiatan, dll)')
+        
+        if not allowed_bukti_file(file.filename):
+            return err('Format file tidak didukung. Hanya JPG, PNG, PDF yang diperbolehkan')
+        
+        # Check file size
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        
+        if file_size > MAX_BUKTI_SIZE:
+            return err('Ukuran file terlalu besar. Maksimal 10MB')
+        
+        # Save file
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = secure_filename(f"{timestamp}_{mahasiswa_id}_{file.filename}")
+        filepath = app.config['BUKTI_FOLDER'] / filename
+        file.save(str(filepath))
+        bukti_path = f"data/bukti_izin/{filename}"
+        
+        submission_id = db.submit_kehadiran_manual(
+            mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path
+        )
+        
+        return ok({'submission_id': submission_id}, 'Pengajuan kehadiran berhasil disubmit')
+        
+    except Exception as e:
+        logger.error(f"Error submit kehadiran manual: {e}")
+        return err(f'Gagal submit pengajuan: {str(e)}', 500)
+
+
+@app.route('/api/kehadiran/list', methods=['GET'])
+def list_kehadiran_submissions():
+    """
+    Endpoint untuk Timdis melihat semua pengajuan kehadiran manual.
+    """
+    try:
+        status = request.args.get('status', '')
+        submissions = db.get_kehadiran_submissions(status)
+        
+        # Convert datetime to ISO format
+        for sub in submissions:
+            if hasattr(sub.get('date'), 'isoformat'):
+                sub['date'] = sub['date'].isoformat()
+            if hasattr(sub.get('created_at'), 'isoformat'):
+                sub['created_at'] = sub['created_at'].isoformat()
+            if hasattr(sub.get('verified_at'), 'isoformat') and sub.get('verified_at'):
+                sub['verified_at'] = sub['verified_at'].isoformat()
+        
+        # Calculate stats
+        all_submissions = db.get_kehadiran_submissions('')
+        stats = {
+            'pending': len([s for s in all_submissions if s['status'] == 'pending']),
+            'approved': len([s for s in all_submissions if s['status'] == 'approved']),
+            'rejected': len([s for s in all_submissions if s['status'] == 'rejected'])
+        }
+        
+        return ok({'submissions': submissions, 'stats': stats})
+        
+    except Exception as e:
+        logger.error(f"Error list kehadiran submissions: {e}")
+        return err(f'Gagal mengambil data: {str(e)}', 500)
+
+
+@app.route('/api/kehadiran/verify', methods=['POST'])
+def verify_kehadiran_submission():
+    """
+    Endpoint untuk Timdis verifikasi pengajuan kehadiran (approve/reject).
+    """
+    try:
+        body = request.json
+        submission_id = body.get('submission_id')
+        action = body.get('action')  # 'approve' or 'reject'
+        verified_by = body.get('verified_by', 'Timdis')
+        reject_reason = body.get('reject_reason', '')
+        
+        if not all([submission_id, action]):
+            return err('Field wajib: submission_id, action')
+        
+        if action not in ['approve', 'reject']:
+            return err('Action harus approve atau reject')
+        
+        if action == 'reject' and not reject_reason:
+            return err('Alasan penolakan wajib diisi')
+        
+        success = db.verify_kehadiran_submission(
+            submission_id, action, verified_by, reject_reason
+        )
+        
+        if success:
+            msg = 'Pengajuan disetujui' if action == 'approve' else 'Pengajuan ditolak'
+            return ok(None, msg)
+        else:
+            return err('Gagal memverifikasi pengajuan')
+            
+    except Exception as e:
+        logger.error(f"Error verify kehadiran: {e}")
+        return err(f'Gagal verifikasi: {str(e)}', 500)
+
+
+@app.route('/api/kehadiran/mahasiswa/<mahasiswa_id>', methods=['GET'])
+def get_kehadiran_by_mahasiswa(mahasiswa_id):
+    """
+    Endpoint untuk mahasiswa melihat riwayat pengajuan kehadiran mereka.
+    """
+    try:
+        submissions = db.get_kehadiran_by_mahasiswa(mahasiswa_id)
+        
+        for sub in submissions:
+            if hasattr(sub.get('date'), 'isoformat'):
+                sub['date'] = sub['date'].isoformat()
+            if hasattr(sub.get('created_at'), 'isoformat'):
+                sub['created_at'] = sub['created_at'].isoformat()
+            if hasattr(sub.get('verified_at'), 'isoformat') and sub.get('verified_at'):
+                sub['verified_at'] = sub['verified_at'].isoformat()
+        
+        return ok({'submissions': submissions})
+        
+    except Exception as e:
+        logger.error(f"Error get kehadiran by mahasiswa: {e}")
+        return err(f'Gagal mengambil data: {str(e)}', 500)
+
+
+# ─── Settings Management ─────────────────────────────────────────────────────────
+SETTINGS_FILE = Path('data/settings.json')
+
+def load_settings_from_file():
+    """Load settings from JSON file"""
+    if not SETTINGS_FILE.exists():
+        # Create default settings
+        default_settings = {
+            'yolo': {
+                'model_path': 'models/yolov8n.pt',
+                'confidence': 0.3,
+                'qr_cooldown': 30
+            },
+            'rtsp': {
+                'frame_width': 1080,
+                'frame_height': 720,
+                'frame_fps': 30,
+                'reconnect_delay': 5
+            }
+        }
+        save_settings_to_file(default_settings)
+        return default_settings
+    
+    try:
+        with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading settings: {e}")
+        return {}
+
+def save_settings_to_file(settings):
+    """Save settings to JSON file"""
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving settings: {e}")
+        return False
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Get all settings"""
+    try:
+        settings = load_settings_from_file()
+        return ok(settings)
+    except Exception as e:
+        logger.error(f"Error getting settings: {e}")
+        return err(f'Gagal memuat pengaturan: {str(e)}', 500)
+
+@app.route('/api/models/list', methods=['GET'])
+def list_models():
+    """List available YOLO models in models/ directory"""
+    try:
+        models_dir = Path('models')
+        if not models_dir.exists():
+            models_dir.mkdir(parents=True, exist_ok=True)
+            return ok([])
+        
+        models = []
+        for model_file in models_dir.glob('*.pt'):
+            size_bytes = model_file.stat().st_size
+            # Format size
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            elif size_bytes < 1024 * 1024 * 1024:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+            
+            models.append({
+                'name': model_file.name,
+                'path': str(model_file).replace('\\', '/'),
+                'size': size_str,
+                'size_bytes': size_bytes
+            })
+        
+        # Sort by name
+        models.sort(key=lambda x: x['name'])
+        return ok(models)
+        
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        return err(f'Gagal memuat daftar model: {str(e)}', 500)
+
+@app.route('/api/settings/yolo', methods=['POST'])
+def save_yolo_settings():
+    """Save YOLO settings"""
+    try:
+        body = request.json
+        if not body:
+            return err('Body request kosong')
+        
+        # Load current settings
+        settings = load_settings_from_file()
+        
+        # Update YOLO settings
+        if 'yolo' not in settings:
+            settings['yolo'] = {}
+        
+        if 'model_path' in body:
+            model_path = body['model_path']
+            # Validate model file exists
+            if not Path(model_path).exists():
+                return err(f'File model tidak ditemukan: {model_path}', 400)
+            if not model_path.endswith('.pt'):
+                return err('File model harus berformat .pt', 400)
+            settings['yolo']['model_path'] = model_path
+        if 'confidence' in body:
+            confidence = float(body['confidence'])
+            if confidence < 0.1 or confidence > 1.0:
+                return err('Confidence harus antara 0.1 - 1.0', 400)
+            settings['yolo']['confidence'] = confidence
+        if 'qr_cooldown' in body:
+            cooldown = int(body['qr_cooldown'])
+            if cooldown < 5 or cooldown > 300:
+                return err('QR Cooldown harus antara 5 - 300 detik', 400)
+            settings['yolo']['qr_cooldown'] = cooldown
+        
+        # Save to file
+        if save_settings_to_file(settings):
+            return ok(settings['yolo'], 'Pengaturan YOLO berhasil disimpan')
+        else:
+            return err('Gagal menyimpan pengaturan', 500)
+            
+    except Exception as e:
+        logger.error(f"Error saving YOLO settings: {e}")
+        return err(f'Gagal menyimpan: {str(e)}', 500)
+
+@app.route('/api/settings/rtsp', methods=['POST'])
+def save_rtsp_settings():
+    """Save RTSP settings"""
+    try:
+        body = request.json
+        if not body:
+            return err('Body request kosong')
+        
+        # Load current settings
+        settings = load_settings_from_file()
+        
+        # Update RTSP settings
+        if 'rtsp' not in settings:
+            settings['rtsp'] = {}
+        
+        if 'frame_width' in body:
+            width = int(body['frame_width'])
+            if width < 320 or width > 3840:
+                return err('Frame Width harus antara 320 - 3840', 400)
+            settings['rtsp']['frame_width'] = width
+        if 'frame_height' in body:
+            height = int(body['frame_height'])
+            if height < 240 or height > 2160:
+                return err('Frame Height harus antara 240 - 2160', 400)
+            settings['rtsp']['frame_height'] = height
+        if 'frame_fps' in body:
+            fps = int(body['frame_fps'])
+            if fps < 1 or fps > 60:
+                return err('Frame FPS harus antara 1 - 60', 400)
+            settings['rtsp']['frame_fps'] = fps
+        if 'reconnect_delay' in body:
+            delay = int(body['reconnect_delay'])
+            if delay < 1 or delay > 30:
+                return err('Reconnect Delay harus antara 1 - 30 detik', 400)
+            settings['rtsp']['reconnect_delay'] = delay
+        
+        # Save to file
+        if save_settings_to_file(settings):
+            return ok(settings['rtsp'], 'Pengaturan RTSP berhasil disimpan')
+        else:
+            return err('Gagal menyimpan pengaturan', 500)
+            
+    except Exception as e:
+        logger.error(f"Error saving RTSP settings: {e}")
+        return err(f'Gagal menyimpan: {str(e)}', 500)
 
 
 if __name__ == '__main__':

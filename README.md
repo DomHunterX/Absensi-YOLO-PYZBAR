@@ -34,25 +34,49 @@ CCTV Stream / Video MP4 → YOLO Detection (QR Paper) → QR Decode → Mahasisw
 - Validasi duplikasi (mencegah check-in/out 2x di hari yang sama)
 - Hasil langsung masuk ke "Absensi Hari Ini"
 
-### 3. 📝 Form Pengajuan Izin/Sakit
+### 3. 📝 Form Pengajuan Izin/Sakit & Kehadiran Manual
 **Untuk Mahasiswa:**
-- Form pengajuan izin/sakit dengan upload bukti
-- Upload bukti (JPG, PNG, PDF) maksimal 10MB
-- Riwayat pengajuan dengan status real-time
-- Notifikasi approve/reject
+- **Form Izin/Sakit**: Pengajuan ketidakhadiran dengan alasan
+  - Upload bukti **WAJIB** (surat dokter, surat izin, dll)
+  - Format: JPG, PNG, PDF (max 10MB)
+  - Riwayat pengajuan dengan status real-time
+- **Form Kehadiran Manual**: Pengajuan kehadiran yang tidak tercatat sistem
+  - Untuk mahasiswa yang hadir tapi tidak tercatat (lupa kartu QR, kamera mati, dll)
+  - Upload bukti **WAJIB** (foto selfie di lokasi, foto kegiatan, dll)
+  - Jam masuk dan jam keluar **WAJIB** diisi
+  - Format: JPG, PNG, PDF (max 10MB)
+- Tab navigation untuk switch antara form izin/sakit dan kehadiran manual
+- Pencarian mahasiswa dengan filter kelompok dan jurusan
 
 **Untuk Tim Disiplin (Timdis):**
-- Dashboard verifikasi pengajuan
-- Filter status: Pending/Disetujui/Ditolak
-- Approve/Reject dengan alasan
-- Auto-update status kehadiran mahasiswa
-- Preview bukti (gambar/PDF)
+- **Verifikasi Izin/Sakit**: Dashboard untuk approve/reject pengajuan izin/sakit
+  - Filter status: Pending/Disetujui/Ditolak
+  - Approve: Status attendance = izin/sakit
+  - Reject: Isi alasan penolakan
+  - Preview bukti (gambar/PDF)
+- **Verifikasi Kehadiran Manual**: Dashboard untuk approve/reject pengajuan kehadiran
+  - Filter status: Pending/Disetujui/Ditolak
+  - Approve: Data masuk ke attendance dengan status "manual"
+  - Reject: Isi alasan penolakan
+  - Preview bukti (gambar/PDF)
+- Badge notifikasi untuk pending submissions
+- Stats cards: Pending, Disetujui, Ditolak
 
 ### 4. 📊 Dashboard & Reporting
-- Statistik kehadiran real-time
-- Export data ke CSV/Excel
-- Riwayat absensi lengkap
+- Statistik kehadiran real-time dengan status izin/sakit
+- Export data ke CSV dengan mapping status (Izin, Sakit, Lengkap, Hadir, Absen)
+- Riwayat absensi lengkap dengan badge status
 - Grafik kehadiran per kelompok
+- Pencarian mahasiswa dengan filter kelompok dan jurusan
+- Material Icons untuk UI yang lebih clean (no emoji)
+
+### 5. ⚙️ Pengaturan Sistem
+- **Konfigurasi YOLO**: Model path (browsable), Confidence threshold, QR cooldown
+- **Konfigurasi RTSP**: Frame width, Frame height, **Frame FPS**, Reconnect delay
+- Browse model YOLO dari folder `models/` dengan preview ukuran file
+- Validasi input untuk semua pengaturan
+- Auto-save ke `data/settings.json`
+- Restart engine/kamera untuk menerapkan perubahan
 
 ## ⚠️ PENTING: Training Model YOLO
 
@@ -137,13 +161,16 @@ Akses dashboard: **http://localhost:5000**
 ├── migrate_to_mysql.py       # Script migrasi dari SQLite (opsional)
 ├── dashboard.html            # Web dashboard
 ├── monitor.html              # Live monitoring page
+├── mahasiswa.html              # Portal mahasiswa (izin/sakit & kehadiran manual)
 ├── static/
 │   ├── css/
 │   │   ├── style.css        # UI styling dashboard
-│   │   └── monitor.css      # UI styling monitor
+│   │   ├── monitor.css      # UI styling monitor
+│   │   └── mahasiswa.css    # UI styling portal mahasiswa (standalone)
 │   ├── js/
 │   │   ├── script.js        # Frontend logic dashboard
-│   │   └── monitor.js       # Frontend logic monitor
+│   │   ├── monitor.js       # Frontend logic monitor
+│   │   └── mahasiswa.js     # Frontend logic portal mahasiswa (eksternal)
 │   ├── img/
 │   │   └── logo.png         # Logo aplikasi
 │   └── sounds/
@@ -152,7 +179,8 @@ Akses dashboard: **http://localhost:5000**
 │   ├── qrcodes/             # Generated QR codes mahasiswa
 │   ├── snapshots/           # Attendance snapshots
 │   ├── uploads/             # Uploaded video files (MP4)
-│   └── bukti_izin/          # Bukti pengajuan izin/sakit
+│   ├── bukti_izin/          # Bukti pengajuan izin/sakit & kehadiran manual
+│   └── settings.json        # Pengaturan sistem (YOLO & RTSP)
 ├── models/
 │   └── yolov8n.pt          # YOLO model (perlu training!)
 ├── logs/
@@ -187,13 +215,30 @@ Akses dashboard: **http://localhost:5000**
 
 ### Izin/Sakit (NEW! 📝)
 - `POST /api/izin/submit` - Submit pengajuan izin/sakit (Mahasiswa)
-  - Form data: `mahasiswa_id`, `type` (izin/sakit), `date`, `keterangan`, `bukti` (file)
+  - Form data: `mahasiswa_id`, `type` (izin/sakit), `date`, `keterangan`, `bukti` (file) - **WAJIB**
 - `GET /api/izin/list` - List semua pengajuan (Timdis)
   - Query: `?status=pending|approved|rejected`
 - `POST /api/izin/verify` - Approve/Reject pengajuan (Timdis)
   - JSON: `submission_id`, `action` (approve/reject), `verified_by`, `rejection_reason`
 - `GET /api/izin/mahasiswa/<id>` - Riwayat pengajuan per mahasiswa
 - `GET /api/izin/bukti/<filename>` - Download/view file bukti
+
+### Kehadiran Manual (NEW! 🙋)
+- `POST /api/kehadiran/submit` - Submit pengajuan kehadiran manual (Mahasiswa)
+  - Form data: `mahasiswa_id`, `date`, `check_in_time`, `check_out_time`, `keterangan`, `bukti` (file) - **SEMUA WAJIB**
+- `GET /api/kehadiran/list` - List semua pengajuan (Timdis)
+  - Query: `?status=pending|approved|rejected`
+- `POST /api/kehadiran/verify` - Approve/Reject pengajuan (Timdis)
+  - JSON: `submission_id`, `action` (approve/reject), `verified_by`, `rejection_reason`
+- `GET /api/kehadiran/mahasiswa/<id>` - Riwayat pengajuan per mahasiswa
+
+### Settings (NEW! ⚙️)
+- `GET /api/settings` - Get semua pengaturan sistem
+- `POST /api/settings/yolo` - Update pengaturan YOLO
+  - JSON: `model_path`, `confidence`, `qr_cooldown`
+- `POST /api/settings/rtsp` - Update pengaturan RTSP
+  - JSON: `frame_width`, `frame_height`, `frame_fps`, `reconnect_delay`
+- `GET /api/models/list` - List semua model YOLO di folder `models/`
 
 ### Cameras
 - `GET /api/cameras` - List semua kamera
@@ -245,28 +290,57 @@ Akses dashboard: **http://localhost:5000**
 4. **Ukuran QR**: Minimal 5x5 cm
 5. **Kecepatan**: Jangan terlalu cepat, beri jeda 1-2 detik per QR
 
-## 📝 Form Pengajuan Izin/Sakit
+## 📝 Form Pengajuan Izin/Sakit & Kehadiran Manual
 
 ### Untuk Mahasiswa
 
-1. **Buka Dashboard** → Menu "Form Pengajuan"
-2. **Pilih Mahasiswa**: Dari dropdown
-3. **Pilih Jenis**: Izin atau Sakit
-4. **Isi Tanggal**: Tanggal ketidakhadiran
-5. **Isi Keterangan**: Minimal 10 karakter
-6. **Upload Bukti** (opsional): JPG, PNG, atau PDF (max 10MB)
-7. **Kirim Pengajuan**
-8. **Lihat Status**: Di tabel "Riwayat Pengajuan Saya"
+#### Form Izin/Sakit (Tidak Hadir)
+1. **Buka Portal Mahasiswa** → `http://localhost:5000/mahasiswa`
+2. **Tab "Izin/Sakit"** (default)
+3. **Pilih Mahasiswa**: Dari dropdown
+4. **Pilih Jenis**: Izin atau Sakit
+5. **Isi Tanggal**: Tanggal ketidakhadiran
+6. **Isi Keterangan**: Minimal 10 karakter
+7. **Upload Bukti** (**WAJIB**): JPG, PNG, atau PDF (max 10MB)
+   - Contoh: Surat dokter, surat izin, dll
+8. **Kirim Pengajuan**
+9. **Lihat Status**: Di tabel "Riwayat Pengajuan Saya"
+
+#### Form Kehadiran Manual (Hadir tapi Tidak Tercatat)
+1. **Buka Portal Mahasiswa** → `http://localhost:5000/mahasiswa`
+2. **Tab "Kehadiran Manual"**
+3. **Pilih Mahasiswa**: Dari dropdown (independen dari tab Izin/Sakit)
+4. **Isi Tanggal**: Tanggal kehadiran
+5. **Isi Jam Masuk** (**WAJIB**): Waktu masuk
+6. **Isi Jam Keluar** (**WAJIB**): Waktu keluar
+7. **Isi Keterangan**: Minimal 10 karakter
+   - Contoh: "Lupa bawa kartu QR", "Kamera CCTV mati", dll
+8. **Upload Bukti** (**WAJIB**): JPG, PNG, atau PDF (max 10MB)
+   - Contoh: Foto selfie di lokasi, foto kegiatan, dll
+9. **Kirim Pengajuan**
+10. **Lihat Status**: Di tabel "Riwayat Pengajuan Saya"
 
 ### Untuk Tim Disiplin (Timdis)
 
-1. **Buka Dashboard** → Menu "Verifikasi Timdis"
+#### Verifikasi Izin/Sakit
+1. **Buka Dashboard** → Menu "Verifikasi Izin/Sakit"
 2. **Lihat Pengajuan**: Filter berdasarkan status
    - Pending (perlu verifikasi)
    - Disetujui
    - Ditolak
 3. **Verifikasi**:
-   - **Setujui**: Status kehadiran mahasiswa otomatis diupdate
+   - **Setujui**: Status kehadiran mahasiswa otomatis diupdate ke izin/sakit
+   - **Tolak**: Isi alasan penolakan
+4. **Lihat Bukti**: Klik icon attachment untuk preview
+
+#### Verifikasi Kehadiran Manual
+1. **Buka Dashboard** → Menu "Verifikasi Kehadiran"
+2. **Lihat Pengajuan**: Filter berdasarkan status
+   - Pending (perlu verifikasi)
+   - Disetujui
+   - Ditolak
+3. **Verifikasi**:
+   - **Setujui**: Data masuk ke tabel attendance dengan status "manual"
    - **Tolak**: Isi alasan penolakan
 4. **Lihat Bukti**: Klik icon attachment untuk preview
 
@@ -275,20 +349,30 @@ Akses dashboard: **http://localhost:5000**
 | Status | Keterangan | Aksi |
 |--------|-----------|------|
 | 🟡 **Pending** | Menunggu verifikasi Timdis | Timdis bisa approve/reject |
-| 🟢 **Disetujui** | Pengajuan diterima | Status attendance = izin/sakit |
+| 🟢 **Disetujui** | Pengajuan diterima | Status attendance diupdate |
 | 🔴 **Ditolak** | Pengajuan tidak diterima | Status tetap tidak hadir |
 
-### Alur Approve
+### Alur Izin/Sakit
 
 ```
-Mahasiswa Submit → Pending → Timdis Approve → Update Attendance (status=izin/sakit)
+Mahasiswa Submit (Izin/Sakit) → Pending → Timdis Approve → Update Attendance (status=izin/sakit)
 ```
 
-### Alur Reject
+### Alur Kehadiran Manual
 
 ```
-Mahasiswa Submit → Pending → Timdis Reject (+ alasan) → Status tetap tidak hadir
+Mahasiswa Submit (Kehadiran) → Pending → Timdis Approve → Insert Attendance (status=manual)
 ```
+
+### Perbedaan Izin/Sakit vs Kehadiran Manual
+
+| Aspek | Izin/Sakit | Kehadiran Manual |
+|-------|-----------|------------------|
+| **Tujuan** | Mahasiswa **TIDAK HADIR** | Mahasiswa **HADIR** tapi tidak tercatat |
+| **Bukti** | Surat dokter, surat izin | Foto selfie, foto kegiatan |
+| **Data** | Tanggal, jenis, keterangan | Tanggal, jam masuk, jam keluar, keterangan |
+| **Hasil** | Status: izin/sakit | Status: manual (hadir) |
+| **Jam** | Tidak perlu | Jam masuk & keluar **WAJIB** |
 
 ## 👥 Menambah Mahasiswa
 
@@ -406,7 +490,27 @@ CREATE TABLE izin_submissions (
     submission_type ENUM('izin', 'sakit') NOT NULL,
     date DATE NOT NULL,
     keterangan TEXT NOT NULL,
-    bukti_path TEXT,
+    bukti_path TEXT NOT NULL,  -- WAJIB
+    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    verified_by VARCHAR(100),
+    verified_at DATETIME,
+    rejection_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (mahasiswa_id) REFERENCES mahasiswa(id) ON DELETE CASCADE
+);
+```
+
+### Tabel: kehadiran_submissions (NEW! 🙋)
+```sql
+CREATE TABLE kehadiran_submissions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    mahasiswa_id VARCHAR(50) NOT NULL,
+    date DATE NOT NULL,
+    check_in_time TIME NOT NULL,
+    check_out_time TIME NOT NULL,  -- WAJIB
+    keterangan TEXT NOT NULL,
+    bukti_path TEXT NOT NULL,  -- WAJIB
     status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
     verified_by VARCHAR(100),
     verified_at DATETIME,
@@ -503,6 +607,23 @@ Kemudian restart aplikasi untuk auto-create tabel.
 2. Cek ukuran: maksimal 10MB
 3. Pastikan folder `data/bukti_izin` ada dan writable
 4. Cek permission folder
+5. **Bukti WAJIB diupload** - tidak bisa submit tanpa bukti
+
+### Dropdown kehadiran manual kosong
+
+**Solusi:**
+1. Refresh halaman (Ctrl+F5)
+2. Dropdown kehadiran manual sekarang **independen** dari dropdown izin/sakit
+3. Kedua dropdown terisi otomatis saat halaman load
+4. Tidak perlu pilih mahasiswa di tab izin/sakit terlebih dahulu
+
+### Pengaturan sistem tidak tersimpan
+
+**Solusi:**
+1. Cek file `data/settings.json` ada dan writable
+2. Cek log error di console browser
+3. Restart engine/kamera setelah ubah pengaturan
+4. Validasi input: pastikan nilai dalam range yang benar
 
 ## 📈 Performance Tips
 
@@ -549,6 +670,21 @@ Kemudian restart aplikasi untuk auto-create tabel.
 
 ## 🆕 Changelog
 
+### Version 4.0 (2026-04-22)
+- ✅ **Kehadiran Manual** - Form pengajuan untuk mahasiswa yang hadir tapi tidak tercatat
+- ✅ **Jam keluar WAJIB** di form kehadiran manual
+- ✅ **Bukti WAJIB** untuk izin/sakit dan kehadiran manual
+- ✅ **Pengaturan Sistem** - Konfigurasi YOLO dan RTSP dengan FPS
+- ✅ **Browse Model YOLO** - Pilih model dari folder dengan preview ukuran
+- ✅ **Pencarian Mahasiswa** - Filter nama, kelompok, jurusan
+- ✅ **Status Izin/Sakit** di dashboard dan export CSV
+- ✅ **Material Icons** menggantikan emoji untuk UI lebih professional
+- ✅ **Hapus kolom ID** di tabel verifikasi (hanya tampilkan data penting)
+- ✅ **Hapus tap highlight** untuk UX mobile yang lebih baik
+- ✅ **Dropdown independen** - Kehadiran manual tidak bergantung pada izin/sakit
+- ✅ **Mahasiswa.js eksternal** - JavaScript terpisah dari HTML
+- ✅ **Mahasiswa.css standalone** - CSS tidak bergantung pada style.css
+
 ### Version 3.2 (2026-04-20)
 - ✅ **Form Pengajuan Izin/Sakit** dengan upload bukti
 - ✅ **Dashboard Verifikasi Timdis** untuk approve/reject
@@ -586,8 +722,8 @@ Contributions welcome! Please:
 
 ---
 
-**Version:** 3.2 (MySQL + Video Upload + Izin/Sakit)  
-**Last Updated:** 2026-04-20
+**Version:** 4.0 (MySQL + Video Upload + Izin/Sakit + Kehadiran Manual + Settings)  
+**Last Updated:** 2026-04-22
 
 ---
 
@@ -596,4 +732,4 @@ Contributions welcome! Please:
 2. **Alwan Nabil Priyanto = Frontend, Database**
 3. **Mala Fauziati = Quality Assurance, YOLO Trained**
 
-API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + Video Upload + Form Izin/Sakit + MySQL**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV atau video upload: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time. Dilengkapi dengan sistem pengajuan izin/sakit untuk mahasiswa dengan verifikasi dari Tim Disiplin.
+API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + Video Upload + Form Izin/Sakit + Kehadiran Manual + MySQL**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV atau video upload: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time. Dilengkapi dengan sistem pengajuan izin/sakit untuk mahasiswa yang tidak hadir dan pengajuan kehadiran manual untuk mahasiswa yang hadir tapi tidak tercatat sistem, dengan verifikasi dari Tim Disiplin.

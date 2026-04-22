@@ -133,6 +133,30 @@ class DatabaseManager:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
         
+        # Tabel untuk pengajuan kehadiran manual
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS kehadiran_submissions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                mahasiswa_id VARCHAR(50) NOT NULL,
+                date DATE NOT NULL,
+                check_in_time TIME NOT NULL,
+                check_out_time TIME NOT NULL,
+                keterangan TEXT NOT NULL,
+                bukti_path TEXT NOT NULL,
+                status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+                verified_by VARCHAR(100),
+                verified_at DATETIME,
+                rejection_reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_mahasiswa (mahasiswa_id),
+                INDEX idx_date (date),
+                INDEX idx_status (status),
+                INDEX idx_created (created_at),
+                FOREIGN KEY (mahasiswa_id) REFERENCES mahasiswa(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -399,3 +423,111 @@ class DatabaseManager:
         stats['rejected'] = rejected['cnt'] if rejected else 0
         
         return stats
+
+    # ─── Kehadiran Manual Functions ──────────────────────────────────────────────
+    def submit_kehadiran_manual(self, mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path=None):
+        """Submit pengajuan kehadiran manual"""
+        query = """
+            INSERT INTO kehadiran_submissions 
+            (mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path, status)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+        """
+        
+        submission_id = self._execute(query, (mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path))
+        logger.info(f"Kehadiran manual submitted: {mahasiswa_id} - {date}")
+        return submission_id
+    
+    def get_kehadiran_submissions(self, status=''):
+        """Get semua pengajuan kehadiran manual (untuk Timdis)"""
+        if status:
+            query = """
+                SELECT 
+                    ks.id, ks.mahasiswa_id, ks.date, ks.check_in_time, ks.check_out_time,
+                    ks.keterangan, ks.bukti_path, ks.status, ks.verified_by, ks.verified_at,
+                    ks.rejection_reason, ks.created_at,
+                    m.name, m.kelompok, m.jurusan
+                FROM kehadiran_submissions ks
+                JOIN mahasiswa m ON ks.mahasiswa_id = m.id
+                WHERE ks.status = %s
+                ORDER BY ks.created_at DESC
+            """
+            return self._execute(query, (status,), fetch_all=True) or []
+        else:
+            query = """
+                SELECT 
+                    ks.id, ks.mahasiswa_id, ks.date, ks.check_in_time, ks.check_out_time,
+                    ks.keterangan, ks.bukti_path, ks.status, ks.verified_by, ks.verified_at,
+                    ks.rejection_reason, ks.created_at,
+                    m.name, m.kelompok, m.jurusan
+                FROM kehadiran_submissions ks
+                JOIN mahasiswa m ON ks.mahasiswa_id = m.id
+                ORDER BY ks.created_at DESC
+            """
+            return self._execute(query, fetch_all=True) or []
+    
+    def verify_kehadiran_submission(self, submission_id, action, verified_by, reject_reason=''):
+        """Verifikasi pengajuan kehadiran (approve/reject)"""
+        if action == 'approve':
+            # Update status ke approved
+            query = """
+                UPDATE kehadiran_submissions 
+                SET status = 'approved', verified_by = %s, verified_at = NOW()
+                WHERE id = %s
+            """
+            self._execute(query, (verified_by, submission_id))
+            
+            # Ambil data submission
+            sub = self._execute(
+                "SELECT * FROM kehadiran_submissions WHERE id = %s",
+                (submission_id,),
+                fetch_one=True
+            )
+            
+            if sub:
+                # Insert ke tabel attendance sebagai kehadiran manual
+                att_query = """
+                    INSERT INTO attendance 
+                    (mahasiswa_id, date, check_in, check_out, status, notes)
+                    VALUES (%s, %s, %s, %s, 'manual', %s)
+                """
+                check_in_datetime = f"{sub['date']} {sub['check_in_time']}"
+                check_out_datetime = f"{sub['date']} {sub['check_out_time']}" if sub['check_out_time'] else None
+                notes = f"Kehadiran manual - {sub['keterangan']}"
+                
+                self._execute(att_query, (
+                    sub['mahasiswa_id'],
+                    sub['date'],
+                    check_in_datetime,
+                    check_out_datetime,
+                    notes
+                ))
+                
+            logger.info(f"Kehadiran approved: submission #{submission_id}")
+            return True
+            
+        elif action == 'reject':
+            query = """
+                UPDATE kehadiran_submissions 
+                SET status = 'rejected', verified_by = %s, verified_at = NOW(), rejection_reason = %s
+                WHERE id = %s
+            """
+            self._execute(query, (verified_by, reject_reason, submission_id))
+            logger.info(f"Kehadiran rejected: submission #{submission_id}")
+            return True
+        
+        return False
+    
+    def get_kehadiran_by_mahasiswa(self, mahasiswa_id):
+        """Get riwayat pengajuan kehadiran manual by mahasiswa"""
+        query = """
+            SELECT 
+                ks.id, ks.mahasiswa_id, ks.date, ks.check_in_time, ks.check_out_time,
+                ks.keterangan, ks.bukti_path, ks.status, ks.verified_by, ks.verified_at,
+                ks.rejection_reason, ks.created_at,
+                m.name, m.kelompok, m.jurusan
+            FROM kehadiran_submissions ks
+            JOIN mahasiswa m ON ks.mahasiswa_id = m.id
+            WHERE ks.mahasiswa_id = %s
+            ORDER BY ks.created_at DESC
+        """
+        return self._execute(query, (mahasiswa_id,), fetch_all=True) or []

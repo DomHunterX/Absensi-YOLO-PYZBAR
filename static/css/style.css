@@ -70,6 +70,16 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* Remove tap highlight on mobile */
+* {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}
+
+button, a, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Layout
    ═══════════════════════════════════════════════════════════════ */
@@ -378,6 +388,7 @@ body {
     margin: var(--space-md) 0;
     font-family: var(--font-mono);
     letter-spacing: -2px;
+    color: white;
 }
 
 .stat-value {

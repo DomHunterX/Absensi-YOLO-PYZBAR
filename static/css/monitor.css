@@ -38,6 +38,16 @@ body {
   overflow: hidden;
 }
 
+/* Remove tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+button, a, input, select, textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ===== LAYOUT ===== */
 .monitor-layout {
   display: grid;

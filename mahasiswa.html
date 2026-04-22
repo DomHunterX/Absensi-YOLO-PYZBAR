@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIABSEN — Portal Mahasiswa</title>
+  <link rel="stylesheet" href="static/css/mahasiswa.css">
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
+    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;500;600;700" rel="stylesheet">
+</head>
+
+<body>
+
+  <div class="mahasiswa-header">
+    <h1><span class="material-symbols-outlined" style="font-size:32px;vertical-align:middle">school</span> Portal Mahasiswa SIABSEN</h1>
+    <p>Form Pengajuan Izin, Sakit & Kehadiran Manual</p>
+  </div>
+
+  <div class="mahasiswa-container">
+    
+    <!-- Info Box -->
+    <div class="info-box">
+      <p><strong>ℹ️ Informasi:</strong> Gunakan form <strong>Izin/Sakit</strong> jika tidak hadir. Gunakan form <strong>Kehadiran Manual</strong> jika hadir tapi tidak tercatat sistem.</p>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid var(--border)">
+      <button class="tab-btn active" onclick="switchTab('izin')" id="tab-izin">
+        <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">edit_note</span>
+        Izin/Sakit
+      </button>
+      <button class="tab-btn" onclick="switchTab('kehadiran')" id="tab-kehadiran">
+        <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">how_to_reg</span>
+        Kehadiran Manual
+      </button>
+    </div>
+
+    <!-- Form Pengajuan Izin/Sakit -->
+    <div class="mahasiswa-card" id="form-izin">
+      <div class="card-title">
+        <span class="material-symbols-outlined">edit_note</span>
+        Form Pengajuan Izin/Sakit
+      </div>
+      
+      <div class="form-row">
+        <label class="form-label">Mahasiswa *</label>
+        <select id="izin-mahasiswa-select" class="form-input">
+          <option value="">-- Pilih Mahasiswa --</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Jenis Pengajuan *</label>
+        <select id="izin-type-select" class="form-input">
+          <option value="izin">Izin</option>
+          <option value="sakit">Sakit</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Tanggal *</label>
+        <input type="date" id="izin-date-input" class="form-input" required>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Keterangan *</label>
+        <textarea id="izin-keterangan-input" class="form-input" rows="4" 
+                  placeholder="Jelaskan alasan izin/sakit Anda..." required></textarea>
+        <div class="form-hint">
+          Minimal 10 karakter
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Upload Bukti *</label>
+        <input type="file" id="izin-bukti-input" class="form-input" 
+               accept=".jpg,.jpeg,.png,.pdf" required>
+        <div class="form-hint">
+          Format: JPG, PNG, PDF · Maksimal 10MB · Wajib upload bukti (surat dokter, surat izin, dll)
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="submitIzin()">
+          <span class="material-symbols-outlined icon-md">send</span>
+          Kirim Pengajuan
+        </button>
+        <button class="btn btn-ghost" onclick="resetIzinForm()">Reset</button>
+      </div>
+    </div>
+
+    <!-- Form Pengajuan Kehadiran Manual -->
+    <div class="mahasiswa-card" id="form-kehadiran" style="display:none">
+      <div class="card-title">
+        <span class="material-symbols-outlined">how_to_reg</span>
+        Form Pengajuan Kehadiran Manual
+      </div>
+      
+      <div class="form-row">
+        <label class="form-label">Mahasiswa *</label>
+        <select id="kehadiran-mahasiswa-select" class="form-input">
+          <option value="">-- Pilih Mahasiswa --</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Tanggal *</label>
+        <input type="date" id="kehadiran-date-input" class="form-input" required>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Jam Masuk *</label>
+        <input type="time" id="kehadiran-checkin-input" class="form-input" required>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Jam Keluar *</label>
+        <input type="time" id="kehadiran-checkout-input" class="form-input" required>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Keterangan *</label>
+        <textarea id="kehadiran-keterangan-input" class="form-input" rows="4" 
+                  placeholder="Jelaskan kenapa kehadiran tidak tercatat (contoh: lupa bawa kartu QR, kamera mati, dll)..." required></textarea>
+        <div class="form-hint">
+          Minimal 10 karakter
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Upload Bukti *</label>
+        <input type="file" id="kehadiran-bukti-input" class="form-input" 
+               accept=".jpg,.jpeg,.png,.pdf" required>
+        <div class="form-hint">
+          Format: JPG, PNG, PDF · Maksimal 10MB · Wajib upload bukti (foto selfie di lokasi, dll)
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="submitKehadiran()">
+          <span class="material-symbols-outlined icon-md">send</span>
+          Kirim Pengajuan
+        </button>
+        <button class="btn btn-ghost" onclick="resetKehadiranForm()">Reset</button>
+      </div>
+    </div>
+
+    <!-- Riwayat Pengajuan -->
+    <div class="mahasiswa-card">
+      <div class="card-title">
+        <span class="material-symbols-outlined">history</span>
+        Riwayat Pengajuan Saya
+      </div>
+      
+      <div class="overflow-auto">
+        <table class="att-table">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Nama Mahasiswa</th>
+              <th>Kelompok</th>
+              <th>Jurusan</th>
+              <th>Status</th>
+              <th>Diverifikasi Oleh</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="my-izin-table-body">
+            <tr>
+              <td colspan="7" class="empty-state">
+                Pilih mahasiswa untuk melihat riwayat
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Modal Detail Bukti -->
+  <div class="modal-backdrop" id="modal-bukti">
+    <div class="modal modal-bukti">
+      <div class="modal-title">Bukti Pengajuan</div>
+      <div id="bukti-content" class="bukti-content">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-bukti')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detail Pengajuan -->
+  <div class="modal-backdrop" id="modal-detail-mahasiswa">
+    <div class="modal" style="max-width:800px">
+      <div class="modal-title">Detail Pengajuan Izin/Sakit</div>
+      <div style="margin-top:20px">
+        <!-- Info Mahasiswa -->
+        <div style="background:var(--bg);padding:20px;border-radius:var(--radius-md);margin-bottom:20px">
+          <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:12px">Informasi Mahasiswa</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">ID Mahasiswa</div>
+              <div style="font-weight:600;font-family:var(--font-mono)" id="mhs-detail-mahasiswa-id">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Nama Lengkap</div>
+              <div style="font-weight:600" id="mhs-detail-mahasiswa-name">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Kelompok</div>
+              <div style="font-weight:600" id="mhs-detail-mahasiswa-kelompok">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Jurusan</div>
+              <div style="font-weight:600" id="mhs-detail-mahasiswa-jurusan">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Info Pengajuan -->
+        <div style="background:var(--bg);padding:20px;border-radius:var(--radius-md);margin-bottom:20px">
+          <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:12px">Detail Pengajuan</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Jenis Pengajuan</div>
+              <div id="mhs-detail-jenis">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Tanggal</div>
+              <div style="font-family:var(--font-mono);font-weight:600" id="mhs-detail-tanggal">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Waktu Pengajuan</div>
+              <div style="font-family:var(--font-mono);font-size:13px" id="mhs-detail-submitted-at">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Status</div>
+              <div id="mhs-detail-status">—</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Keterangan</div>
+            <div style="background:var(--surface);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border)" id="mhs-detail-keterangan">—</div>
+          </div>
+        </div>
+
+        <!-- Bukti -->
+        <div style="background:var(--bg);padding:20px;border-radius:var(--radius-md);margin-bottom:20px">
+          <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:12px">Bukti Pendukung</div>
+          <div id="mhs-detail-bukti-container" style="text-align:center">—</div>
+        </div>
+
+        <!-- Info Verifikasi -->
+        <div id="mhs-detail-verification-info" style="background:var(--bg);padding:20px;border-radius:var(--radius-md);display:none">
+          <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:600;margin-bottom:12px">Informasi Verifikasi</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Diverifikasi Oleh</div>
+              <div style="font-weight:600" id="mhs-detail-verified-by">—</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Waktu Verifikasi</div>
+              <div style="font-family:var(--font-mono);font-size:13px" id="mhs-detail-verified-at">—</div>
+            </div>
+          </div>
+          <div id="mhs-detail-rejection-reason-container" style="margin-top:16px;display:none">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Alasan Penolakan</div>
+            <div style="background:var(--danger-light);color:var(--danger);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--danger)" id="mhs-detail-rejection-reason">—</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal('modal-detail-mahasiswa')">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast">
+    <div class="toast-title" id="toast-title"></div>
+    <div class="toast-msg" id="toast-msg"></div>
+  </div>
+
+  <script src="static/js/mahasiswa.js"></script>
+
+</body>
+
+</html>

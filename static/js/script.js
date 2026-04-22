@@ -15,15 +15,19 @@ const API = 'http://localhost:5000/api';
       document.getElementById('page-' + page).style.display = '';
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => {
-        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi timdis' : 'pengaturan'))
+        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi izin' : page === 'kehadiran-timdis' ? 'verifikasi kehadiran' : 'pengaturan'))
           n.classList.add('active');
       });
       currentPage = page;
+      
+      // Load settings when settings page is shown
+      if (page === 'settings') loadSettings();
+      
       if (page === 'attendance') loadFullAttendance();
       if (page === 'mahasiswa') loadMahasiswa();
       if (page === 'cameras') loadCameras();
-      if (page === 'izin-mahasiswa') initIzinMahasiswaPage();
       if (page === 'izin-timdis') loadIzinSubmissions();
+      if (page === 'kehadiran-timdis') loadKehadiranSubmissions();
     }
 
     // ─── Clock ──────────────────────────────────────────────────────────────────
@@ -124,12 +128,24 @@ const API = 'http://localhost:5000/api';
       tbody.innerHTML = list.slice(0, 8).map((r, i) => {
         const initials = (r.name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
         const color = colors[i % colors.length];
-        const status = r.check_out ? '<span class="badge badge-green">Lengkap</span>'
-          : r.check_in ? '<span class="badge badge-yellow">Masih Dalam</span>'
-            : '<span class="badge badge-red">Absen</span>';
         const conf = r.yolo_confidence ? `<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${Math.round(r.yolo_confidence * 100)}%</span>` : '';
         const checkIn = r.check_in ? `<span class="time-val">${r.check_in.slice(11, 19) || r.check_in}</span>` : '<span class="time-dash">—</span>';
         const checkOut = r.check_out ? `<span class="time-val">${r.check_out.slice(11, 19) || r.check_out}</span>` : '<span class="time-dash">—</span>';
+        
+        // Handle different status types including izin and sakit
+        let status;
+        if (r.status === 'izin') {
+          status = '<span class="badge badge-blue"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">description</span> Izin</span>';
+        } else if (r.status === 'sakit') {
+          status = '<span class="badge badge-orange"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">medical_services</span> Sakit</span>';
+        } else if (r.check_out) {
+          status = '<span class="badge badge-green">Lengkap</span>';
+        } else if (r.check_in) {
+          status = '<span class="badge badge-yellow">Masih Dalam</span>';
+        } else {
+          status = '<span class="badge badge-red">Absen</span>';
+        }
+        
         return `<tr>
       <td><div class="mahasiswa-cell">
         <div class="avatar" style="background:${color}22;color:${color}">${initials}</div>
@@ -210,9 +226,20 @@ const API = 'http://localhost:5000/api';
           dur = `${h}j ${m}m`;
         }
         const conf = r.yolo_confidence ? `${Math.round(r.yolo_confidence * 100)}%` : '—';
-        const status = r.check_out ? '<span class="badge badge-green">Lengkap</span>'
-          : r.check_in ? '<span class="badge badge-yellow">Hadir</span>'
-            : '<span class="badge badge-red">Absen</span>';
+        
+        // Handle different status types including izin and sakit
+        let status;
+        if (r.status === 'izin') {
+          status = '<span class="badge badge-blue"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">description</span> Izin</span>';
+        } else if (r.status === 'sakit') {
+          status = '<span class="badge badge-orange"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">medical_services</span> Sakit</span>';
+        } else if (r.check_out) {
+          status = '<span class="badge badge-green">Lengkap</span>';
+        } else if (r.check_in) {
+          status = '<span class="badge badge-yellow">Hadir</span>';
+        } else {
+          status = '<span class="badge badge-red">Absen</span>';
+        }
         
         return `<tr>
       <td style="color:var(--muted);font-family:var(--mono)">${i + 1}</td>
@@ -235,9 +262,17 @@ const API = 'http://localhost:5000/api';
     function exportCSV() {
       if (!attendanceData.length) return toast('Tidak ada data', '', true);
       const header = 'Nama,Kelompok,Masuk,Keluar,Status,Kamera\n';
-      const rows = attendanceData.map(r =>
-        `${r.name},${r.kelompok},${r.check_in || ''},${r.check_out || ''},${r.status},${r.camera_id || ''}`
-      ).join('\n');
+      const rows = attendanceData.map(r => {
+        // Map status to readable text for CSV
+        let statusText = r.status;
+        if (r.status === 'izin') statusText = 'Izin';
+        else if (r.status === 'sakit') statusText = 'Sakit';
+        else if (r.check_out) statusText = 'Lengkap';
+        else if (r.check_in) statusText = 'Hadir';
+        else statusText = 'Absen';
+        
+        return `${r.name},${r.kelompok},${r.check_in || ''},${r.check_out || ''},${statusText},${r.camera_id || ''}`;
+      }).join('\n');
       const a = document.createElement('a');
       a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(header + rows);
       a.download = `absensi_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -250,6 +285,7 @@ const API = 'http://localhost:5000/api';
       const res = await apiFetch('/mahasiswa');
       const list = res?.success ? res.data : getDemoMahasiswa();
       mahasiswaData = list;
+      populateMahasiswaFilters(list);
       renderMahasiswa(list);
     }
 
@@ -263,10 +299,62 @@ const API = 'http://localhost:5000/api';
       ];
     }
 
+    function populateMahasiswaFilters(list) {
+      // Get unique kelompok and jurusan
+      const kelompokSet = new Set(list.map(m => m.kelompok).filter(k => k));
+      const jurusanSet = new Set(list.map(m => m.jurusan).filter(j => j));
+      
+      // Populate kelompok dropdown
+      const kelompokSelect = document.getElementById('mhs-filter-kelompok');
+      const currentKelompok = kelompokSelect.value;
+      kelompokSelect.innerHTML = '<option value="">Semua</option>' + 
+        Array.from(kelompokSet).sort().map(k => `<option value="${k}">${k}</option>`).join('');
+      if (currentKelompok) kelompokSelect.value = currentKelompok;
+      
+      // Populate jurusan dropdown
+      const jurusanSelect = document.getElementById('mhs-filter-jurusan');
+      const currentJurusan = jurusanSelect.value;
+      jurusanSelect.innerHTML = '<option value="">Semua</option>' + 
+        Array.from(jurusanSet).sort().map(j => `<option value="${j}">${j}</option>`).join('');
+      if (currentJurusan) jurusanSelect.value = currentJurusan;
+    }
+
+    function filterMahasiswa() {
+      const searchTerm = document.getElementById('mhs-search').value.toLowerCase();
+      const filterKelompok = document.getElementById('mhs-filter-kelompok').value;
+      const filterJurusan = document.getElementById('mhs-filter-jurusan').value;
+      
+      let filtered = mahasiswaData;
+      
+      // Filter by name
+      if (searchTerm) {
+        filtered = filtered.filter(m => m.name.toLowerCase().includes(searchTerm));
+      }
+      
+      // Filter by kelompok
+      if (filterKelompok) {
+        filtered = filtered.filter(m => m.kelompok === filterKelompok);
+      }
+      
+      // Filter by jurusan
+      if (filterJurusan) {
+        filtered = filtered.filter(m => m.jurusan === filterJurusan);
+      }
+      
+      renderMahasiswa(filtered);
+    }
+
+    function resetMahasiswaFilter() {
+      document.getElementById('mhs-search').value = '';
+      document.getElementById('mhs-filter-kelompok').value = '';
+      document.getElementById('mhs-filter-jurusan').value = '';
+      renderMahasiswa(mahasiswaData);
+    }
+
     function renderMahasiswa(list) {
       const tbody = document.getElementById('mhs-tbody');
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Belum ada mahasiswa</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Tidak ada mahasiswa ditemukan</td></tr>';
         return;
       }
       tbody.innerHTML = list.map((e, i) => {
@@ -397,6 +485,19 @@ const API = 'http://localhost:5000/api';
           const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
           dur = `${h}j ${m}m`;
         }
+        
+        // Handle different status types including izin and sakit
+        let status;
+        if (r.status === 'izin') {
+          status = '<span class="badge badge-blue"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">description</span> Izin</span>';
+        } else if (r.status === 'sakit') {
+          status = '<span class="badge badge-orange"><span class="material-symbols-outlined" style="font-size:12px;vertical-align:middle">medical_services</span> Sakit</span>';
+        } else if (r.check_out) {
+          status = '<span class="badge badge-green">Lengkap</span>';
+        } else {
+          status = '<span class="badge badge-yellow">Parsial</span>';
+        }
+        
         return `<tr>
       <td style="font-family:var(--mono);font-size:12px">${r.date || r.check_in?.slice(0, 10) || '—'}</td>
       <td class="mhs-name">${r.name}</td>
@@ -404,7 +505,7 @@ const API = 'http://localhost:5000/api';
       <td><span class="time-val">${ci}</span></td>
       <td><span class="${r.check_out ? 'time-val' : 'time-dash'}">${co}</span></td>
       <td style="font-family:var(--mono);font-size:12px;color:var(--accent2)">${dur}</td>
-      <td>${r.check_out ? '<span class="badge badge-green">Lengkap</span>' : '<span class="badge badge-yellow">Parsial</span>'}</td>
+      <td>${status}</td>
     </tr>`;
       }).join('');
     }
@@ -878,168 +979,13 @@ const API = 'http://localhost:5000/api';
       if (currentPage === 'attendance') loadFullAttendance();
     }, 30000);
 
-    // ─── IZIN / SAKIT ────────────────────────────────────────────────────────────
-
-    function initIzinMahasiswaPage() {
-      // Populate mahasiswa dropdown
-      const sel = document.getElementById('izin-mahasiswa-select');
-      if (mahasiswaData.length === 0) {
-        loadMahasiswaForIzin();
-      } else {
-        populateIzinMahasiswaSelect(mahasiswaData);
-      }
-      // Set default date to today
-      document.getElementById('izin-date-input').value = new Date().toISOString().split('T')[0];
-    }
-
-    async function loadMahasiswaForIzin() {
-      try {
-        const res = await fetch(API + '/mahasiswa');
-        const result = await res.json();
-        if (result.success) {
-          mahasiswaData = result.data || [];
-          populateIzinMahasiswaSelect(mahasiswaData);
-        }
-      } catch (e) {
-        console.error('Error loading mahasiswa:', e);
-      }
-    }
-
-    function populateIzinMahasiswaSelect(data) {
-      const sel = document.getElementById('izin-mahasiswa-select');
-      sel.innerHTML = '<option value="">-- Pilih Mahasiswa --</option>';
-      data.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = `${m.name} (${m.id}) — Kelompok ${m.kelompok}`;
-        sel.appendChild(opt);
-      });
-    }
-
-    async function submitIzin() {
-      const mahasiswaId = document.getElementById('izin-mahasiswa-select').value;
-      const type = document.getElementById('izin-type-select').value;
-      const date = document.getElementById('izin-date-input').value;
-      const keterangan = document.getElementById('izin-keterangan-input').value.trim();
-      const buktiFile = document.getElementById('izin-bukti-input').files[0];
-
-      // Validasi
-      if (!mahasiswaId) return toast('Pilih mahasiswa terlebih dahulu', '', true);
-      if (!date) return toast('Tanggal wajib diisi', '', true);
-      if (!keterangan) return toast('Keterangan wajib diisi', '', true);
-      if (keterangan.length < 10) return toast('Keterangan terlalu singkat', 'Minimal 10 karakter', true);
-
-      // Validasi file bukti
-      if (buktiFile) {
-        const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
-        if (!allowedTypes.includes(buktiFile.type)) {
-          return toast('Format file tidak didukung', 'Hanya JPG, PNG, PDF', true);
-        }
-        if (buktiFile.size > 10 * 1024 * 1024) {
-          return toast('File terlalu besar', 'Maksimal 10MB', true);
-        }
-      }
-
-      const formData = new FormData();
-      formData.append('mahasiswa_id', mahasiswaId);
-      formData.append('type', type);
-      formData.append('date', date);
-      formData.append('keterangan', keterangan);
-      if (buktiFile) formData.append('bukti', buktiFile);
-
-      // Disable button
-      const btn = document.querySelector('#page-izin-mahasiswa .btn-primary');
-      btn.disabled = true;
-      btn.textContent = 'Mengirim...';
-
-      try {
-        const res = await fetch(API + '/izin/submit', { method: 'POST', body: formData });
-        const result = await res.json();
-
-        if (result.success) {
-          toast('Pengajuan berhasil dikirim!',
-            `${type === 'izin' ? 'Izin' : 'Sakit'} untuk tanggal ${date} sedang diproses`);
-          resetIzinForm();
-          loadMyIzinHistory();
-          loadIzinPendingCount();
-        } else {
-          toast('Gagal mengirim pengajuan', result.message, true);
-        }
-      } catch (e) {
-        toast('Gagal mengirim', 'Pastikan server berjalan', true);
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">send</span> Kirim Pengajuan';
-      }
-    }
-
-    function resetIzinForm() {
-      document.getElementById('izin-mahasiswa-select').value = '';
-      document.getElementById('izin-type-select').value = 'izin';
-      document.getElementById('izin-date-input').value = new Date().toISOString().split('T')[0];
-      document.getElementById('izin-keterangan-input').value = '';
-      document.getElementById('izin-bukti-input').value = '';
-      document.getElementById('my-izin-table-body').innerHTML =
-        '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Pilih mahasiswa untuk melihat riwayat</td></tr>';
-    }
-
-    async function loadMyIzinHistory() {
-      const mahasiswaId = document.getElementById('izin-mahasiswa-select').value;
-      if (!mahasiswaId) return;
-
-      const tbody = document.getElementById('my-izin-table-body');
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
-
-      try {
-        const res = await fetch(API + `/izin/mahasiswa/${mahasiswaId}`);
-        const result = await res.json();
-
-        if (!result.success || !result.data.submissions.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Belum ada pengajuan</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = result.data.submissions.map(s => {
-          const statusBadge = {
-            pending:  '<span class="badge badge-yellow">⏳ Pending</span>',
-            approved: '<span class="badge badge-green">✅ Disetujui</span>',
-            rejected: '<span class="badge badge-red">❌ Ditolak</span>'
-          }[s.status] || s.status;
-
-          const typeBadge = s.submission_type === 'izin'
-            ? '<span class="badge badge-blue">Izin</span>'
-            : '<span class="badge badge-orange">Sakit</span>';
-
-          const verifiedInfo = s.verified_by
-            ? `<div style="font-size:12px;color:var(--text-muted)">${s.verified_by}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</div>
-               ${s.rejection_reason ? `<div style="font-size:11px;color:var(--danger);margin-top:2px">"${s.rejection_reason}"</div>` : ''}`
-            : '<span style="color:var(--text-muted)">—</span>';
-
-          const buktiBtn = s.bukti_path
-            ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti('${s.id}','${s.bukti_path}')">
-                <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
-               </button>`
-            : '<span style="color:var(--text-muted)">—</span>';
-
-          return `<tr>
-            <td>${s.date}</td>
-            <td>${typeBadge}</td>
-            <td style="max-width:200px;white-space:normal;font-size:13px">${s.keterangan}</td>
-            <td>${statusBadge}</td>
-            <td>${verifiedInfo}</td>
-            <td>${buktiBtn}</td>
-          </tr>`;
-        }).join('');
-      } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
-      }
-    }
+    // ─── IZIN / SAKIT (TIMDIS ONLY) ─────────────────────────────────────────────
 
     // Timdis: Load semua pengajuan
     async function loadIzinSubmissions() {
       const status = document.getElementById('izin-filter-status')?.value || '';
       const tbody = document.getElementById('izin-submissions-table-body');
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
 
       try {
         const url = API + '/izin/list' + (status ? `?status=${status}` : '');
@@ -1047,7 +993,7 @@ const API = 'http://localhost:5000/api';
         const result = await res.json();
 
         if (!result.success) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
           return;
         }
 
@@ -1061,15 +1007,15 @@ const API = 'http://localhost:5000/api';
         document.getElementById('sidebar-pending-izin').style.display = stats.pending > 0 ? '' : 'none';
 
         if (!submissions.length) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">Tidak ada pengajuan</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Tidak ada pengajuan</td></tr>';
           return;
         }
 
         tbody.innerHTML = submissions.map(s => {
           const statusBadge = {
-            pending:  '<span class="badge badge-yellow">⏳ Pending</span>',
-            approved: '<span class="badge badge-green">✅ Disetujui</span>',
-            rejected: '<span class="badge badge-red">❌ Ditolak</span>'
+            pending:  '<span class="badge badge-yellow"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">schedule</span> Pending</span>',
+            approved: '<span class="badge badge-green"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check_circle</span> Disetujui</span>',
+            rejected: '<span class="badge badge-red"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">cancel</span> Ditolak</span>'
           }[s.status] || s.status;
 
           const typeBadge = s.submission_type === 'izin'
@@ -1094,7 +1040,6 @@ const API = 'http://localhost:5000/api';
             : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
 
           return `<tr>
-            <td style="font-family:var(--font-mono);font-size:12px">#${s.id}</td>
             <td>
               <div style="font-weight:600">${s.name}</div>
               <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
@@ -1110,7 +1055,7 @@ const API = 'http://localhost:5000/api';
         }).join('');
 
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
       }
     }
 
@@ -1212,10 +1157,295 @@ const API = 'http://localhost:5000/api';
     // Load pending count on init
     loadIzinPendingCount();
 
-    // Trigger loadMyIzinHistory when mahasiswa changes
-    document.getElementById('izin-mahasiswa-select')?.addEventListener('change', loadMyIzinHistory);
+    // ─── VERIFIKASI PENGAJUAN KEHADIRAN (TIMDIS) ─────────────────────────────────
 
-    // ─── Auto refresh ────────────────────────────────────────────────────────────
+    // Timdis: Load semua pengajuan kehadiran
+    async function loadKehadiranSubmissions() {
+      const status = document.getElementById('kehadiran-filter-status')?.value || '';
+      const tbody = document.getElementById('kehadiran-submissions-table-body');
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+
+      try {
+        const url = API + '/kehadiran/list' + (status ? `?status=${status}` : '');
+        const res = await fetch(url);
+        const result = await res.json();
+
+        if (!result.success) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+          return;
+        }
+
+        const { submissions, stats } = result.data;
+
+        // Update stats
+        document.getElementById('stat-pending-kehadiran').textContent = stats.pending;
+        document.getElementById('stat-approved-kehadiran').textContent = stats.approved;
+        document.getElementById('stat-rejected-kehadiran').textContent = stats.rejected;
+        document.getElementById('sidebar-pending-kehadiran').textContent = stats.pending;
+        document.getElementById('sidebar-pending-kehadiran').style.display = stats.pending > 0 ? '' : 'none';
+
+        if (!submissions.length) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">Tidak ada pengajuan</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = submissions.map(s => {
+          const statusBadge = {
+            pending:  '<span class="badge badge-yellow"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">schedule</span> Pending</span>',
+            approved: '<span class="badge badge-green"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check_circle</span> Disetujui</span>',
+            rejected: '<span class="badge badge-red"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">cancel</span> Ditolak</span>'
+          }[s.status] || s.status;
+
+          const buktiBtn = s.bukti_path
+            ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti(${s.id},'${s.bukti_path}')" title="Lihat Bukti">
+                <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
+               </button>`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          const actionBtns = s.status === 'pending'
+            ? `<div style="display:flex;gap:6px">
+                <button class="btn btn-sm" style="background:var(--success);color:#fff" onclick="approveKehadiran(${s.id})">
+                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check</span> Setujui
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="openRejectKehadiranModal(${s.id})">
+                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">close</span> Tolak
+                </button>
+               </div>`
+            : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
+
+          return `<tr>
+            <td>
+              <div style="font-weight:600">${s.name}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
+            </td>
+            <td><span class="badge badge-blue">${s.kelompok}</span></td>
+            <td style="font-family:var(--font-mono);font-size:13px">${s.date}</td>
+            <td style="font-family:var(--font-mono);font-size:13px">${s.check_in_time || '—'}</td>
+            <td style="font-family:var(--font-mono);font-size:13px">${s.check_out_time || '—'}</td>
+            <td style="max-width:180px;white-space:normal;font-size:13px">${s.keterangan}</td>
+            <td>${buktiBtn}</td>
+            <td>${statusBadge}</td>
+            <td>${actionBtns}</td>
+          </tr>`;
+        }).join('');
+
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
+      }
+    }
+
+    async function approveKehadiran(submissionId) {
+      const verifiedBy = 'Timdis';
+      try {
+        const res = await fetch(API + '/kehadiran/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submission_id: submissionId, action: 'approve', verified_by: verifiedBy })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          toast('Pengajuan Disetujui', 'Kehadiran manual telah dicatat');
+          loadKehadiranSubmissions();
+        } else {
+          toast('Gagal', result.message, true);
+        }
+      } catch (e) {
+        toast('Error', e.message, true);
+      }
+    }
+
+    function openRejectKehadiranModal(submissionId) {
+      // Reuse the same reject modal as izin
+      document.getElementById('reject-submission-id').value = submissionId;
+      document.getElementById('reject-reason-input').value = '';
+      document.getElementById('modal-reject-izin').classList.add('show');
+      
+      // Change the confirm button to call rejectKehadiran instead
+      const confirmBtn = document.querySelector('#modal-reject-izin .btn-danger');
+      confirmBtn.onclick = () => confirmRejectKehadiran(submissionId);
+    }
+
+    async function confirmRejectKehadiran(submissionId) {
+      const reason = document.getElementById('reject-reason-input').value.trim();
+      if (!reason) {
+        toast('Alasan wajib diisi', '', true);
+        return;
+      }
+      
+      const verifiedBy = 'Timdis';
+      try {
+        const res = await fetch(API + '/kehadiran/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            submission_id: submissionId, 
+            action: 'reject', 
+            verified_by: verifiedBy,
+            reject_reason: reason
+          })
+        });
+        
+        const result = await res.json();
+        if (result.success) {
+          closeModal('modal-reject-izin');
+          toast('Pengajuan Ditolak', reason);
+          loadKehadiranSubmissions();
+        } else {
+          toast('Gagal', result.message, true);
+        }
+      } catch (e) {
+        toast('Error', e.message, true);
+      }
+    }
+
+    function viewKehadiranBukti(submissionId, buktiPath) {
+      // Reuse the same modal as izin
+      viewBukti(submissionId, buktiPath);
+    }
+
+    async function loadKehadiranPendingCount() {
+      try {
+        const res = await fetch(API + '/kehadiran/list?status=pending');
+        const result = await res.json();
+        if (result.success) {
+          const count = result.data.submissions.length;
+          const badge = document.getElementById('sidebar-pending-kehadiran');
+          badge.textContent = count;
+          badge.style.display = count > 0 ? '' : 'none';
+        }
+      } catch (e) {
+        console.error('Error loading kehadiran pending count:', e);
+      }
+    }
+
+    // Load pending count on init
+    loadKehadiranPendingCount();
+
+    // ─── Settings Management ─────────────────────────────────────────────────────
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        if (!res.ok) throw new Error('Failed to load settings');
+        const data = await res.json();
+        
+        // Populate YOLO settings
+        if (data.yolo) {
+          document.getElementById('setting-model-path').value = data.yolo.model_path || 'models/yolov8n.pt';
+          document.getElementById('setting-yolo-conf').value = data.yolo.confidence || 0.45;
+          document.getElementById('setting-qr-cooldown').value = data.yolo.qr_cooldown || 30;
+        }
+        
+        // Populate RTSP settings
+        if (data.rtsp) {
+          document.getElementById('setting-frame-width').value = data.rtsp.frame_width || 1280;
+          document.getElementById('setting-frame-height').value = data.rtsp.frame_height || 720;
+          document.getElementById('setting-frame-fps').value = data.rtsp.frame_fps || 30;
+          document.getElementById('setting-reconnect-delay').value = data.rtsp.reconnect_delay || 5;
+        }
+      } catch (e) {
+        console.error('Error loading settings:', e);
+        // Use default values if API fails
+      }
+    }
+
+    async function saveYoloSettings() {
+      const settings = {
+        model_path: document.getElementById('setting-model-path').value,
+        confidence: parseFloat(document.getElementById('setting-yolo-conf').value),
+        qr_cooldown: parseInt(document.getElementById('setting-qr-cooldown').value)
+      };
+      
+      try {
+        const res = await fetch('/api/settings/yolo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+        
+        if (!res.ok) throw new Error('Failed to save settings');
+        const data = await res.json();
+        toast('Pengaturan YOLO disimpan', 'Restart engine untuk menerapkan perubahan');
+      } catch (e) {
+        toast('Gagal menyimpan', e.message, true);
+      }
+    }
+
+    async function saveRtspSettings() {
+      const settings = {
+        frame_width: parseInt(document.getElementById('setting-frame-width').value),
+        frame_height: parseInt(document.getElementById('setting-frame-height').value),
+        frame_fps: parseInt(document.getElementById('setting-frame-fps').value),
+        reconnect_delay: parseInt(document.getElementById('setting-reconnect-delay').value)
+      };
+      
+      try {
+        const res = await fetch('/api/settings/rtsp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+        
+        if (!res.ok) throw new Error('Failed to save settings');
+        const data = await res.json();
+        toast('Pengaturan RTSP disimpan', 'Restart kamera untuk menerapkan perubahan');
+      } catch (e) {
+        toast('Gagal menyimpan', e.message, true);
+      }
+    }
+
+    async function browseModels() {
+      document.getElementById('modal-browse-models').classList.add('show');
+      
+      try {
+        const res = await fetch('/api/models/list');
+        if (!res.ok) throw new Error('Failed to load models');
+        const data = await res.json();
+        
+        const modelsList = document.getElementById('models-list');
+        if (!data.data || data.data.length === 0) {
+          modelsList.innerHTML = `
+            <div style="text-align:center;padding:40px;color:var(--muted)">
+              <span class="material-symbols-outlined" style="font-size:48px;opacity:0.3">folder_off</span>
+              <p style="margin-top:12px">Tidak ada model ditemukan di folder models/</p>
+              <small style="font-size:11px">Letakkan file .pt di folder models/</small>
+            </div>
+          `;
+          return;
+        }
+        
+        modelsList.innerHTML = data.data.map(model => `
+          <div class="model-item" onclick="selectModel('${model.path}')" style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='var(--hover)'" onmouseout="this.style.background='transparent'">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="material-symbols-outlined" style="color:var(--accent)">description</span>
+              <div style="flex:1">
+                <div style="font-weight:500">${model.name}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${model.path}</div>
+              </div>
+              <div style="text-align:right;font-size:11px;color:var(--muted)">
+                ${model.size}
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('models-list').innerHTML = `
+          <div style="text-align:center;padding:40px;color:var(--danger)">
+            <span class="material-symbols-outlined" style="font-size:48px;opacity:0.3">error</span>
+            <p style="margin-top:12px">Gagal memuat daftar model</p>
+            <small style="font-size:11px">${e.message}</small>
+          </div>
+        `;
+      }
+    }
+
+    function selectModel(modelPath) {
+      document.getElementById('setting-model-path').value = modelPath;
+      closeModal('modal-browse-models');
+      toast('Model dipilih', modelPath);
+    }
+
+    // ─── Auto refresh ────────────────────────────────────────────────────────────    // ─── Auto refresh ────────────────────────────────────────────────────────────
     function refreshData() {
       loadDashboard();
       toast('Data diperbarui', new Date().toLocaleTimeString('id-ID'));
@@ -1225,6 +1455,7 @@ const API = 'http://localhost:5000/api';
       if (currentPage === 'dashboard') loadDashboard();
       if (currentPage === 'attendance') loadFullAttendance();
       if (currentPage === 'izin-timdis') loadIzinSubmissions();
+      if (currentPage === 'kehadiran-timdis') loadKehadiranSubmissions();
     }, 30000);
 
     // ─── Init ────────────────────────────────────────────────────────────────────
