@@ -39,6 +39,9 @@
           <span class="badge" id="sidebar-present">0</span>
         </div>
         <div class="nav-section">Data</div>
+        <div class="nav-item" onclick="showPage('users')">
+          <span class="material-symbols-outlined icon">manage_accounts</span> User Management
+        </div>
         <div class="nav-item" onclick="showPage('mahasiswa')">
           <span class="material-symbols-outlined icon">badge</span> Mahasiswa
         </div>
@@ -81,7 +84,6 @@
           </div>
           <div class="header-actions">
             <button class="btn btn-ghost btn-sm" onclick="refreshData()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span> Refresh</button>
-            <button class="btn btn-primary btn-sm" onclick="openAddMahasiswa()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span> Tambah Mahasiswa</button>
           </div>
         </div>
 
@@ -196,13 +198,88 @@
         </div>
       </section>
 
+      <!-- ===== USER MANAGEMENT SECTION ===== -->
+      <section id="page-users" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">User Management</div>
+            <div class="page-sub">Kelola akun pengguna sistem</div>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-primary btn-sm" onclick="openAddUserModal()">
+              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">person_add</span>
+              Tambah User
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter dan Pencarian -->
+        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1;min-width:200px">
+              <label class="form-label">Cari Username/Nama</label>
+              <input type="text" id="user-search" class="form-input" placeholder="Ketik username atau nama..." style="padding:7px 10px" oninput="filterUsers()">
+            </div>
+            <div>
+              <label class="form-label">Role</label>
+              <select id="user-filter-role" class="form-input" style="width:150px;padding:7px 10px" onchange="filterUsers()">
+                <option value="">Semua Role</option>
+                <option value="admin">Admin</option>
+                <option value="timdis">Tim Disiplin</option>
+                <option value="mahasiswa">Mahasiswa</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Status</label>
+              <select id="user-filter-status" class="form-input" style="width:120px;padding:7px 10px" onchange="filterUsers()">
+                <option value="">Semua</option>
+                <option value="1">Aktif</option>
+                <option value="0">Nonaktif</option>
+              </select>
+            </div>
+            <div style="align-self:flex-end">
+              <button class="btn btn-secondary btn-sm" onclick="resetUserFilter()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabel Users -->
+        <div class="panel">
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Nama Lengkap</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Mahasiswa ID</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr>
+                <td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Memuat data...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="page-mahasiswa" style="display:none">
         <div class="page-header">
           <div>
             <div class="page-title">Data Mahasiswa</div>
             <div class="page-sub">Manajemen mahasiswa dan QR Code</div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="openAddMahasiswa()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span> Tambah Mahasiswa</button>
+          <button class="btn btn-primary" onclick="openAddMahasiswa()">
+            <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">add</span>
+            Tambah Mahasiswa
+          </button>
         </div>
         
         <!-- Filter dan Pencarian -->
@@ -241,13 +318,15 @@
                 <th>Kelompok</th>
                 <th>Jurusan</th>
                 <th>Email</th>
+                <th>No Telp Mahasiswa</th>
+                <th>No Telp Orang Tua</th>
                 <th>QR Code ID</th>
                 <th>Aksi</th>
               </tr>
             </thead>
             <tbody id="mhs-tbody">
               <tr>
-                <td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Memuat...</td>
+                <td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Memuat...</td>
               </tr>
             </tbody>
           </table>
@@ -409,16 +488,34 @@
           </div>
         </div>
 
-        <!-- Filter -->
-        <div class="panel" style="margin-bottom:20px">
-          <div style="display:flex;gap:12px;align-items:center">
-            <label style="font-weight:600;font-size:14px">Filter Status:</label>
-            <select id="izin-filter-status" class="form-input" style="width:200px" onchange="loadIzinSubmissions()">
-              <option value="">Semua</option>
-              <option value="pending" selected>Pending</option>
-              <option value="approved">Disetujui</option>
-              <option value="rejected">Ditolak</option>
-            </select>
+        <!-- Filter dan Pencarian -->
+        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1;min-width:200px">
+              <label class="form-label">Cari Nama Mahasiswa</label>
+              <input type="text" id="izin-search" class="form-input" placeholder="Ketik nama mahasiswa..." style="padding:7px 10px" oninput="filterIzinSubmissions()">
+            </div>
+            <div>
+              <label class="form-label">Kelompok</label>
+              <select id="izin-filter-kelompok" class="form-input" style="width:120px;padding:7px 10px" onchange="filterIzinSubmissions()">
+                <option value="">Semua</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Status</label>
+              <select id="izin-filter-status" class="form-input" style="width:150px;padding:7px 10px" onchange="filterIzinSubmissions()">
+                <option value="">Semua</option>
+                <option value="pending" selected>Pending</option>
+                <option value="approved">Disetujui</option>
+                <option value="rejected">Ditolak</option>
+              </select>
+            </div>
+            <div style="align-self:flex-end">
+              <button class="btn btn-secondary btn-sm" onclick="resetIzinFilter()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
+                Reset
+              </button>
+            </div>
           </div>
         </div>
 
@@ -480,16 +577,34 @@
           </div>
         </div>
 
-        <!-- Filter -->
-        <div class="panel" style="margin-bottom:20px">
-          <div style="display:flex;gap:12px;align-items:center">
-            <label style="font-weight:600;font-size:14px">Filter Status:</label>
-            <select id="kehadiran-filter-status" class="form-input" style="width:200px" onchange="loadKehadiranSubmissions()">
-              <option value="">Semua</option>
-              <option value="pending" selected>Pending</option>
-              <option value="approved">Disetujui</option>
-              <option value="rejected">Ditolak</option>
-            </select>
+        <!-- Filter dan Pencarian -->
+        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1;min-width:200px">
+              <label class="form-label">Cari Nama Mahasiswa</label>
+              <input type="text" id="kehadiran-search" class="form-input" placeholder="Ketik nama mahasiswa..." style="padding:7px 10px" oninput="filterKehadiranSubmissions()">
+            </div>
+            <div>
+              <label class="form-label">Kelompok</label>
+              <select id="kehadiran-filter-kelompok" class="form-input" style="width:120px;padding:7px 10px" onchange="filterKehadiranSubmissions()">
+                <option value="">Semua</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Status</label>
+              <select id="kehadiran-filter-status" class="form-input" style="width:150px;padding:7px 10px" onchange="filterKehadiranSubmissions()">
+                <option value="">Semua</option>
+                <option value="pending" selected>Pending</option>
+                <option value="approved">Disetujui</option>
+                <option value="rejected">Ditolak</option>
+              </select>
+            </div>
+            <div style="align-self:flex-end">
+              <button class="btn btn-secondary btn-sm" onclick="resetKehadiranFilter()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
+                Reset
+              </button>
+            </div>
           </div>
         </div>
 
@@ -589,46 +704,209 @@
 
     </main>
   </div>
-  <div class="modal-backdrop" id="modal-mahasiswa">
+
+  <!-- ===== MODAL USER MANAGEMENT ===== -->
+  <div class="modal-backdrop" id="modal-user">
     <div class="modal">
-      <div class="modal-title">Tambah Mahasiswa Baru</div>
-      <div class="qr-result" id="qr-result-box">
-        <img id="qr-img-display" class="qr-img" width="200" alt="QR Code">
-        <div class="qr-code-label" id="qr-id-label">—</div>
-        <p style="font-size:12px;color:var(--muted);margin-top:8px">Cetak dan berikan kartu ini ke mahasiswa</p>
-        <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="downloadQR()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span> Download QR</button>
-      </div>
-      <div id="mhs-form">
-        <div class="form-row-2">
-          <div class="form-row" style="margin:0">
-            <label class="form-label">ID Mahasiswa *</label>
-            <input class="form-input" id="f-id" placeholder="MHS001">
-          </div>
-          <div class="form-row" style="margin:0">
-            <label class="form-label">Nama Lengkap *</label>
-            <input class="form-input" id="f-name" placeholder="Nama Mahasiswa">
-          </div>
+      <div class="modal-title" id="user-modal-title">Tambah User</div>
+      
+      <form id="user-form" onsubmit="submitUser(event)">
+        <input type="hidden" id="user-id" value="">
+        
+        <div class="form-row">
+          <label class="form-label">Username *</label>
+          <input type="text" id="user-username" class="form-input" placeholder="Username untuk login" required>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Username harus unik, tidak bisa diubah setelah dibuat</small>
         </div>
-        <div style="height:12px"></div>
-        <div class="form-row-2">
-          <div class="form-row" style="margin:0">
-            <label class="form-label">Kelompok *</label>
-            <input class="form-input" id="f-dept" placeholder="A">
-          </div>
-          <div class="form-row" style="margin:0">
-            <label class="form-label">Jurusan *</label>
-            <input class="form-input" id="f-pos" placeholder="Teknik Informatika">
-          </div>
+
+        <div class="form-row" id="password-row">
+          <label class="form-label">Password *</label>
+          <input type="password" id="user-password" class="form-input" placeholder="Minimal 6 karakter" required>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Minimal 6 karakter</small>
         </div>
-        <div style="height:12px"></div>
+
+        <div class="form-row">
+          <label class="form-label">Nama Lengkap *</label>
+          <input type="text" id="user-fullname" class="form-input" placeholder="Nama lengkap user" required>
+        </div>
+
         <div class="form-row">
           <label class="form-label">Email</label>
-          <input class="form-input" id="f-email" type="email" placeholder="mahasiswa@student.ac.id">
+          <input type="email" id="user-email" class="form-input" placeholder="email@example.com">
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Role *</label>
+          <select id="user-role" class="form-input" onchange="toggleMahasiswaField()" required>
+            <option value="">-- Pilih Role --</option>
+            <option value="admin">Admin</option>
+            <option value="timdis">Tim Disiplin</option>
+            <option value="mahasiswa">Mahasiswa</option>
+          </select>
+        </div>
+
+        <div class="form-row" id="mahasiswa-id-row" style="display:none">
+          <label class="form-label">Mahasiswa ID *</label>
+          <select id="user-mahasiswa-id" class="form-input">
+            <option value="">-- Pilih Mahasiswa --</option>
+          </select>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Wajib diisi untuk role Mahasiswa</small>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-user')">Batal</button>
+          <button type="submit" class="btn btn-primary">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">save</span>
+            Simpan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-mahasiswa">
+    <div class="modal">
+      <div class="modal-title" id="modal-mahasiswa-title">Tambah Mahasiswa</div>
+      
+      <!-- Method Selection -->
+      <div class="form-row" style="margin-bottom:20px">
+        <label class="form-label">Metode Penambahan *</label>
+        <select id="add-method-select" class="form-input" onchange="toggleAddMethod()">
+          <option value="manual">Manual - Input Satu per Satu</option>
+          <option value="excel">Otomatis - Upload File Excel</option>
+        </select>
+      </div>
+
+      <!-- Manual Method -->
+      <div id="manual-method">
+        <div class="qr-result" id="qr-result-box">
+          <img id="qr-img-display" class="qr-img" width="200" alt="QR Code">
+          <div class="qr-code-label" id="qr-id-label">—</div>
+          <p style="font-size:12px;color:var(--muted);margin-top:8px">Cetak dan berikan kartu ini ke mahasiswa</p>
+          <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="downloadQR()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span> Download QR</button>
+        </div>
+        <div id="mhs-form">
+          <div class="form-row-2">
+            <div class="form-row" style="margin:0">
+              <label class="form-label">ID Mahasiswa *</label>
+              <input class="form-input" id="f-id" placeholder="MHS001">
+            </div>
+            <div class="form-row" style="margin:0">
+              <label class="form-label">Nama Lengkap *</label>
+              <input class="form-input" id="f-name" placeholder="Nama Mahasiswa">
+            </div>
+          </div>
+          <div style="height:12px"></div>
+          <div class="form-row-2">
+            <div class="form-row" style="margin:0">
+              <label class="form-label">Kelompok *</label>
+              <input class="form-input" id="f-dept" placeholder="A">
+            </div>
+            <div class="form-row" style="margin:0">
+              <label class="form-label">Jurusan *</label>
+              <input class="form-input" id="f-pos" placeholder="Teknik Informatika">
+            </div>
+          </div>
+          <div style="height:12px"></div>
+          <div class="form-row">
+            <label class="form-label">Email</label>
+            <input class="form-input" id="f-email" type="email" placeholder="mahasiswa@student.ac.id">
+          </div>
+          <div style="height:12px"></div>
+          <div class="form-row-2">
+            <div class="form-row" style="margin:0">
+              <label class="form-label">No Telp Mahasiswa</label>
+              <input class="form-input" id="f-telp-mhs" type="tel" placeholder="08123456789">
+            </div>
+            <div class="form-row" style="margin:0">
+              <label class="form-label">No Telp Orang Tua</label>
+              <input class="form-input" id="f-telp-ortu" type="tel" placeholder="08123456789">
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Excel Method -->
+      <div id="excel-method" style="display:none">
+        <div class="form-section" style="background:var(--primary-light);border:1px solid var(--primary);margin:16px 0">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <span class="material-symbols-outlined" style="color:var(--primary);font-size:24px">info</span>
+            <div>
+              <div style="font-weight:600;color:var(--primary)">Format File Excel</div>
+              <div style="font-size:13px;color:var(--text-muted)">Pastikan file Excel memiliki kolom yang sesuai</div>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text-secondary)">
+            <strong>Kolom yang diperlukan:</strong><br>
+            • <code>mahasiswa_id</code> - ID Mahasiswa (contoh: MHS001)<br>
+            • <code>name</code> - Nama Lengkap<br>
+            • <code>kelompok</code> - Kelompok (contoh: A, B, C)<br>
+            • <code>jurusan</code> - Jurusan<br>
+            • <code>email</code> - Email (opsional)<br>
+            • <code>no_telp_mahasiswa</code> - No Telp Mahasiswa (opsional)<br>
+            • <code>no_telp_ortu</code> - No Telp Orang Tua (opsional)
+          </div>
+          <div style="margin-top:12px">
+            <button class="btn btn-ghost btn-sm" onclick="downloadExcelTemplate()">
+              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span>
+              Download Template Excel
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Upload File Excel *</label>
+          <input type="file" id="excel-file-input" class="form-input" 
+                 accept=".xlsx,.xls" onchange="handleExcelFileSelect(event)">
+          <div class="form-hint">
+            Format: XLSX, XLS · Maksimal 5MB · Pastikan menggunakan template yang benar
+          </div>
+        </div>
+
+        <div id="excel-preview" style="display:none;margin-top:20px">
+          <div class="form-section">
+            <div style="font-weight:600;margin-bottom:12px">Preview Data Excel</div>
+            <div style="max-height:300px;overflow:auto">
+              <table class="att-table" id="excel-preview-table">
+                <thead>
+                  <tr>
+                    <th>ID Mahasiswa</th>
+                    <th>Nama</th>
+                    <th>Kelompok</th>
+                    <th>Jurusan</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="excel-preview-tbody">
+                </tbody>
+              </table>
+            </div>
+            <div id="excel-summary" style="margin-top:12px;font-size:13px;color:var(--text-muted)">
+            </div>
+          </div>
+        </div>
+
+        <div id="excel-upload-progress" style="display:none;margin-top:20px">
+          <div class="form-section">
+            <div style="font-weight:600;margin-bottom:12px">Progress Upload</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="upload-progress-fill" style="width:0%"></div>
+            </div>
+            <div id="upload-status" style="margin-top:8px;font-size:13px;color:var(--text-muted)">
+              Memproses...
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('modal-mahasiswa')">Tutup</button>
         <button class="btn btn-primary" id="mhs-submit-btn" onclick="submitMahasiswa()">Simpan & Generate QR</button>
+        <button class="btn btn-primary" id="excel-submit-btn" onclick="submitExcelMahasiswa()" style="display:none">
+          <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">upload</span>
+          Upload Data Excel
+        </button>
       </div>
     </div>
   </div>

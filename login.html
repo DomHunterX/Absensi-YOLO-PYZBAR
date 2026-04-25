@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — SIABSEN</title>
+  <link rel="stylesheet" href="static/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@300;400;500;600;700" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: var(--font-sans);
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 420px;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: white;
+      border-radius: 16px;
+      padding: 48px 40px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .login-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .login-logo img {
+      width: 48px;
+      height: 48px;
+    }
+
+    .login-logo-text {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--accent);
+      font-family: var(--font-mono);
+    }
+
+    .login-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .login-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .form-input-wrapper {
+      position: relative;
+    }
+
+    .form-input-wrapper .material-symbols-outlined {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 20px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 14px 12px 44px;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: var(--font-sans);
+      transition: all 0.2s;
+      box-sizing: border-box;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.1);
+    }
+
+    .form-input.error {
+      border-color: var(--danger);
+    }
+
+    .error-message {
+      display: none;
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: #fee;
+      border: 1px solid #fcc;
+      border-radius: 6px;
+      color: var(--danger);
+      font-size: 13px;
+    }
+
+    .error-message.show {
+      display: block;
+    }
+
+    .btn-login {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-login:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(79, 124, 255, 0.3);
+    }
+
+    .btn-login:active {
+      transform: translateY(0);
+    }
+
+    .btn-login:disabled {
+      background: var(--muted);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .login-footer {
+      text-align: center;
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .login-footer-text {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .login-info {
+      margin-top: 24px;
+      padding: 16px;
+      background: var(--bg2);
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .login-info strong {
+      color: var(--text);
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .login-info code {
+      background: var(--bg3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      color: var(--accent);
+    }
+
+    .remember-me {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .remember-me input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .remember-me label {
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">
+          <img src="static/img/logo.png" alt="Logo">
+          <div class="login-logo-text">SIABSEN</div>
+        </div>
+        <div class="login-title">Selamat Datang</div>
+        <div class="login-subtitle">Masuk ke sistem absensi cerdas</div>
+      </div>
+
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <div class="form-input-wrapper">
+            <span class="material-symbols-outlined">person</span>
+            <input 
+              type="text" 
+              id="username" 
+              class="form-input" 
+              placeholder="Masukkan username"
+              required
+              autocomplete="username"
+            >
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <div class="form-input-wrapper">
+            <span class="material-symbols-outlined">lock</span>
+            <input 
+              type="password" 
+              id="password" 
+              class="form-input" 
+              placeholder="Masukkan password"
+              required
+              autocomplete="current-password"
+            >
+          </div>
+        </div>
+
+        <div class="error-message" id="error-message"></div>
+
+        <div class="remember-me">
+          <input type="checkbox" id="remember-me">
+          <label for="remember-me">Ingat saya</label>
+        </div>
+
+        <button type="submit" class="btn-login" id="login-btn">
+          <span id="login-text">Masuk</span>
+          <span class="spinner" id="login-spinner" style="display:none"></span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <div class="login-footer-text">
+          SIABSEN v2.5 — Sistem Absensi Cerdas
+        </div>
+      </div>
+
+      <!-- Info default credentials (remove in production) -->
+      <div class="login-info">
+        <strong>🔑 Default Credentials:</strong>
+        Admin: <code>admin</code> / <code>admin123</code><br>
+        <small style="opacity:0.7;margin-top:4px;display:block">Ganti password setelah login pertama</small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000/api';
+
+    async function handleLogin(event) {
+      event.preventDefault();
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const rememberMe = document.getElementById('remember-me').checked;
+
+      if (!username || !password) {
+        showError('Username dan password wajib diisi');
+        return;
+      }
+
+      // Show loading
+      setLoading(true);
+      hideError();
+
+      try {
+        const response = await fetch(`${API}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',  // IMPORTANT: Include cookies in request
+          body: JSON.stringify({ username, password })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          const token = result.data.session_token;
+          const user = result.data.user;
+          
+          // Save session token to storage
+          if (rememberMe) {
+            localStorage.setItem('session_token', token);
+            localStorage.setItem('user', JSON.stringify(user));
+          } else {
+            sessionStorage.setItem('session_token', token);
+            sessionStorage.setItem('user', JSON.stringify(user));
+          }
+
+          console.log('Login successful, redirecting...', user);
+
+          // Redirect with token as query parameter to ensure authentication works
+          // The server will also set cookie, but query param ensures first request works
+          if (user.role === 'admin' || user.role === 'timdis') {
+            window.location.href = `/?token=${token}`;  // Dashboard with token
+          } else if (user.role === 'mahasiswa') {
+            window.location.href = `/mahasiswa?token=${token}`;  // Mahasiswa portal with token
+          }
+        } else {
+          showError(result.message || 'Login gagal');
+        }
+      } catch (error) {
+        console.error('Login error:', error);
+        showError('Gagal terhubung ke server. Pastikan API server berjalan.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function setLoading(loading) {
+      const btn = document.getElementById('login-btn');
+      const text = document.getElementById('login-text');
+      const spinner = document.getElementById('login-spinner');
+
+      btn.disabled = loading;
+      text.style.display = loading ? 'none' : 'inline';
+      spinner.style.display = loading ? 'inline-block' : 'none';
+    }
+
+    function showError(message) {
+      const errorEl = document.getElementById('error-message');
+      errorEl.textContent = message;
+      errorEl.classList.add('show');
+
+      // Add error class to inputs
+      document.getElementById('username').classList.add('error');
+      document.getElementById('password').classList.add('error');
+    }
+
+    function hideError() {
+      const errorEl = document.getElementById('error-message');
+      errorEl.classList.remove('show');
+
+      // Remove error class from inputs
+      document.getElementById('username').classList.remove('error');
+      document.getElementById('password').classList.remove('error');
+    }
+
+    // Clear error on input
+    document.getElementById('username').addEventListener('input', hideError);
+    document.getElementById('password').addEventListener('input', hideError);
+
+    // Check if already logged in
+    window.addEventListener('DOMContentLoaded', () => {
+      // Skip validation if already on login page
+      const currentPath = window.location.pathname;
+      if (currentPath === '/login') {
+        return; // Don't auto-redirect from login page
+      }
+      
+      const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
+      if (token) {
+        // Validate token
+        fetch(`${API}/auth/validate`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          credentials: 'include'  // Include cookies
+        })
+        .then(res => res.json())
+        .then(result => {
+          if (result.success) {
+            // Already logged in, redirect
+            const user = JSON.parse(localStorage.getItem('user') || sessionStorage.getItem('user'));
+            if (user.role === 'admin' || user.role === 'timdis') {
+              window.location.href = '/';
+            } else {
+              window.location.href = '/mahasiswa';
+            }
+          }
+        })
+        .catch(() => {
+          // Token invalid, stay on login page
+        });
+      }
+    });
+  </script>
+</body>
+</html>

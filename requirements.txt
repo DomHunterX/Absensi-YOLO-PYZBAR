@@ -22,6 +22,14 @@ requests>=2.31.0            # HTTP client untuk testing (opsional)
 # ── Database ──────────────────────────────────────────────────────────────────
 mysql-connector-python>=8.0.33  # MySQL connector untuk Python
 
+# ── Authentication & Security ─────────────────────────────────────────────────
+bcrypt>=4.0.0               # Password hashing untuk authentication system
+
 # ── GPU Support (opsional, untuk YOLO lebih cepat) ────────────────────────────
 # Jika menggunakan GPU NVIDIA dengan CUDA 11.8:
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# ── Enhanced Features ─────────────────────────────────────────────────────────
+pandas>=2.0.0               # Excel processing untuk bulk upload mahasiswa
+openpyxl>=3.1.0             # Excel file support untuk pandas
+reportlab>=4.0.0            # PDF generation untuk sertifikat kehadiran
+Werkzeug>=3.0.0             # File upload handling (sudah dependency Flask)

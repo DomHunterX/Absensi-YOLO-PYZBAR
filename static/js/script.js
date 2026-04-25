@@ -1,21 +1,69 @@
 const API = 'http://localhost:5000/api';
 
-    // ─── State ─────────────────────────────────────────────────────────────────
-    let dashboardData = null;
-    let attendanceData = [];
-    let mahasiswaData = [];
-    let cameraData = [];
-    let currentPage = 'dashboard';
-    let currentQRBase64 = '';
-    let editingCameraId = null;
+// ─── Authentication Check & URL Cleanup ────────────────────────────────────
+(function() {
+  // Get token from URL query parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenFromUrl = urlParams.get('token');
+  
+  // If token in URL, save to sessionStorage and clean URL
+  if (tokenFromUrl) {
+    sessionStorage.setItem('session_token', tokenFromUrl);
+    // Clean URL without reloading page
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+  
+  // Check if user is authenticated
+  const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
+  
+  if (!token) {
+    // No token, redirect to login
+    window.location.href = '/login';
+    return;
+  }
+  
+  // Validate token with server
+  fetch(API + '/auth/validate', {
+    headers: { 
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include'
+  })
+  .then(res => res.json())
+  .then(result => {
+    if (!result.success) {
+      // Invalid token, clear storage and redirect to login
+      localStorage.removeItem('session_token');
+      localStorage.removeItem('user');
+      sessionStorage.removeItem('session_token');
+      sessionStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+  })
+  .catch(err => {
+    console.error('Auth validation error:', err);
+    // On error, redirect to login
+    window.location.href = '/login';
+  });
+})();
 
-    // ─── Navigation ────────────────────────────────────────────────────────────
-    function showPage(page) {
+// ─── State ─────────────────────────────────────────────────────────────────
+let dashboardData = null;
+let attendanceData = [];
+let mahasiswaData = [];
+let cameraData = [];
+let currentPage = 'dashboard';
+let currentQRBase64 = '';
+let editingCameraId = null;
+
+// ─── Navigation ────────────────────────────────────────────────────────────
+function showPage(page) {
       document.querySelectorAll('[id^="page-"]').forEach(s => s.style.display = 'none');
       document.getElementById('page-' + page).style.display = '';
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => {
-        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi izin' : page === 'kehadiran-timdis' ? 'verifikasi kehadiran' : 'pengaturan'))
+        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'users' ? 'user management' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi izin' : page === 'kehadiran-timdis' ? 'verifikasi kehadiran' : 'pengaturan'))
           n.classList.add('active');
       });
       currentPage = page;
@@ -24,6 +72,7 @@ const API = 'http://localhost:5000/api';
       if (page === 'settings') loadSettings();
       
       if (page === 'attendance') loadFullAttendance();
+      if (page === 'users') loadUsers();
       if (page === 'mahasiswa') loadMahasiswa();
       if (page === 'cameras') loadCameras();
       if (page === 'izin-timdis') loadIzinSubmissions();
@@ -55,9 +104,23 @@ const API = 'http://localhost:5000/api';
     // ─── API Calls ──────────────────────────────────────────────────────────────
     async function apiFetch(path, opts = {}) {
       try {
+        // Get token from storage
+        const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
+        
+        // Add Authorization header if token exists
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(opts.headers || {})
+        };
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         const r = await fetch(API + path, {
-          headers: { 'Content-Type': 'application/json' },
-          ...opts
+          ...opts,
+          headers,
+          credentials: 'include'  // Include cookies
         });
         return await r.json();
       } catch (e) {
@@ -354,7 +417,7 @@ const API = 'http://localhost:5000/api';
     function renderMahasiswa(list) {
       const tbody = document.getElementById('mhs-tbody');
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">Tidak ada mahasiswa ditemukan</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Tidak ada mahasiswa ditemukan</td></tr>';
         return;
       }
       tbody.innerHTML = list.map((e, i) => {
@@ -369,6 +432,8 @@ const API = 'http://localhost:5000/api';
       <td><span class="badge badge-blue">${e.kelompok}</span></td>
       <td style="color:var(--muted2);font-size:12px">${e.jurusan}</td>
       <td style="font-size:12px;color:var(--muted)">${e.email || '—'}</td>
+      <td style="font-size:12px;color:var(--text);font-family:var(--mono)">${e.no_telp_mahasiswa || '—'}</td>
+      <td style="font-size:12px;color:var(--text);font-family:var(--mono)">${e.no_telp_ortu || '—'}</td>
       <td><span style="font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--bg3);padding:2px 6px;border-radius:4px">${e.qr_code_id || '—'}</span></td>
       <td>
         <button class="btn btn-ghost btn-sm" onclick="showQR('${e.id}')"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">qr_code</span></button>
@@ -376,30 +441,55 @@ const API = 'http://localhost:5000/api';
       </td>
     </tr>`;
       }).join('');
-    }
+}
 
-    async function showQR(mhsId) {
-      const res = await apiFetch(`/mahasiswa/${mhsId}/qr`);
-      if (res?.success) {
-        const modal = document.getElementById('modal-mahasiswa');
-        document.getElementById('qr-result-box').classList.add('show');
-        document.getElementById('mhs-form').style.display = 'none';
-        document.getElementById('mhs-submit-btn').style.display = 'none';
-        document.getElementById('qr-img-display').src = `data:image/png;base64,${res.data.qr_image_base64}`;
-        document.getElementById('qr-id-label').textContent = res.data.qr_code_id;
-        currentQRBase64 = res.data.qr_image_base64;
-        modal.classList.add('show');
-      } else {
-        toast('Tidak dapat memuat QR', 'Pastikan API server berjalan', true);
-      }
+async function showQR(mhsId) {
+  const res = await apiFetch(`/mahasiswa/${mhsId}/qr`);
+  if (res?.success) {
+    const modal = document.getElementById('modal-mahasiswa');
+    
+    // Change modal title to "QR-Code Mahasiswa" and center it
+    const modalTitle = document.getElementById('modal-mahasiswa-title');
+    if (modalTitle) {
+      modalTitle.textContent = 'QR-Code Mahasiswa';
+      modalTitle.style.textAlign = 'center';
     }
+    
+    // Hide method selection dropdown
+    const methodSelect = document.getElementById('add-method-select');
+    if (methodSelect && methodSelect.closest('.form-row')) {
+      methodSelect.closest('.form-row').style.display = 'none';
+    }
+    
+    // Show QR result box
+    document.getElementById('qr-result-box').classList.add('show');
+    
+    // Hide form and submit button
+    document.getElementById('mhs-form').style.display = 'none';
+    document.getElementById('mhs-submit-btn').style.display = 'none';
+    
+    // Hide excel submit button if exists
+    const excelBtn = document.getElementById('excel-submit-btn');
+    if (excelBtn) excelBtn.style.display = 'none';
+    
+    // Display QR code
+    document.getElementById('qr-img-display').src = `data:image/png;base64,${res.data.qr_image_base64}`;
+    document.getElementById('qr-id-label').textContent = res.data.qr_code_id;
+    currentQRBase64 = res.data.qr_image_base64;
+    
+    // Open modal
+    modal.classList.add('show');
+  } else {
+    toast('Tidak dapat memuat QR', 'Pastikan API server berjalan', true);
+  }
+}
 
-    async function removeMahasiswa(id) {
-      if (!confirm('Nonaktifkan mahasiswa ini?')) return;
-      const res = await apiFetch(`/mahasiswa/${id}`, { method: 'DELETE' });
-      if (res?.success) { toast('Mahasiswa dinonaktifkan'); loadMahasiswa(); }
-      else toast('Gagal menonaktifkan', '', true);
-    }
+async function removeMahasiswa(id) {
+  if (!confirm('Nonaktifkan mahasiswa ini?')) return;
+  const res = await apiFetch(`/mahasiswa/${id}`, { method: 'DELETE' });
+  if (res?.success) { toast('Mahasiswa dinonaktifkan'); loadMahasiswa(); }
+  else toast('Gagal menonaktifkan', '', true);
+}
 
     // ─── Cameras ────────────────────────────────────────────────────────────────
     async function loadCameras() {
@@ -838,13 +928,7 @@ const API = 'http://localhost:5000/api';
     }
 
     // ─── Modals ─────────────────────────────────────────────────────────────────
-    function openAddMahasiswa() {
-      document.getElementById('qr-result-box').classList.remove('show');
-      document.getElementById('mhs-form').style.display = '';
-      document.getElementById('mhs-submit-btn').style.display = '';
-      ['f-id', 'f-name', 'f-dept', 'f-pos', 'f-email'].forEach(id => document.getElementById(id).value = '');
-      document.getElementById('modal-mahasiswa').classList.add('show');
-    }
+    // Note: openAddMahasiswa() is defined at line 1695 (enhanced version)
 
     function openAddCamera() {
       editingCameraId = null;
@@ -892,7 +976,9 @@ const API = 'http://localhost:5000/api';
         name: document.getElementById('f-name').value.trim(),
         kelompok: document.getElementById('f-dept').value.trim(),
         jurusan: document.getElementById('f-pos').value.trim(),
-        email: document.getElementById('f-email').value.trim()
+        email: document.getElementById('f-email').value.trim(),
+        no_telp_mahasiswa: document.getElementById('f-telp-mhs').value.trim(),
+        no_telp_ortu: document.getElementById('f-telp-ortu').value.trim()
       };
       if (!body.id || !body.name || !body.kelompok || !body.jurusan) {
         toast('Lengkapi semua field wajib', '', true); return;
@@ -999,6 +1085,10 @@ const API = 'http://localhost:5000/api';
 
         const { submissions, stats } = result.data;
 
+        // Store data for filtering
+        allIzinSubmissions = submissions || [];
+        populateIzinKelompokFilter(allIzinSubmissions);
+
         // Update stats
         document.getElementById('stat-pending-izin').textContent = stats.pending;
         document.getElementById('stat-approved-izin').textContent = stats.approved;
@@ -1011,48 +1101,8 @@ const API = 'http://localhost:5000/api';
           return;
         }
 
-        tbody.innerHTML = submissions.map(s => {
-          const statusBadge = {
-            pending:  '<span class="badge badge-yellow"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">schedule</span> Pending</span>',
-            approved: '<span class="badge badge-green"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check_circle</span> Disetujui</span>',
-            rejected: '<span class="badge badge-red"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">cancel</span> Ditolak</span>'
-          }[s.status] || s.status;
-
-          const typeBadge = s.submission_type === 'izin'
-            ? '<span class="badge badge-blue">Izin</span>'
-            : '<span class="badge badge-orange">Sakit</span>';
-
-          const buktiBtn = s.bukti_path
-            ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti(${s.id},'${s.bukti_path}')" title="Lihat Bukti">
-                <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
-               </button>`
-            : '<span style="color:var(--text-muted)">—</span>';
-
-          const actionBtns = s.status === 'pending'
-            ? `<div style="display:flex;gap:6px">
-                <button class="btn btn-sm" style="background:var(--success);color:#fff" onclick="approveIzin(${s.id})">
-                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check</span> Setujui
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="openRejectModal(${s.id})">
-                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">close</span> Tolak
-                </button>
-               </div>`
-            : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
-
-          return `<tr>
-            <td>
-              <div style="font-weight:600">${s.name}</div>
-              <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
-            </td>
-            <td><span class="badge badge-blue">${s.kelompok}</span></td>
-            <td>${typeBadge}</td>
-            <td style="font-family:var(--font-mono);font-size:13px">${s.date}</td>
-            <td style="max-width:180px;white-space:normal;font-size:13px">${s.keterangan}</td>
-            <td>${buktiBtn}</td>
-            <td>${statusBadge}</td>
-            <td>${actionBtns}</td>
-          </tr>`;
-        }).join('');
+        // Render using the filter function
+        renderIzinSubmissions(submissions);
 
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
@@ -1177,6 +1227,10 @@ const API = 'http://localhost:5000/api';
 
         const { submissions, stats } = result.data;
 
+        // Store data for filtering
+        allKehadiranSubmissions = submissions || [];
+        populateKehadiranKelompokFilter(allKehadiranSubmissions);
+
         // Update stats
         document.getElementById('stat-pending-kehadiran').textContent = stats.pending;
         document.getElementById('stat-approved-kehadiran').textContent = stats.approved;
@@ -1189,45 +1243,8 @@ const API = 'http://localhost:5000/api';
           return;
         }
 
-        tbody.innerHTML = submissions.map(s => {
-          const statusBadge = {
-            pending:  '<span class="badge badge-yellow"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">schedule</span> Pending</span>',
-            approved: '<span class="badge badge-green"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check_circle</span> Disetujui</span>',
-            rejected: '<span class="badge badge-red"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">cancel</span> Ditolak</span>'
-          }[s.status] || s.status;
-
-          const buktiBtn = s.bukti_path
-            ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti(${s.id},'${s.bukti_path}')" title="Lihat Bukti">
-                <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
-               </button>`
-            : '<span style="color:var(--text-muted)">—</span>';
-
-          const actionBtns = s.status === 'pending'
-            ? `<div style="display:flex;gap:6px">
-                <button class="btn btn-sm" style="background:var(--success);color:#fff" onclick="approveKehadiran(${s.id})">
-                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check</span> Setujui
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="openRejectKehadiranModal(${s.id})">
-                  <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">close</span> Tolak
-                </button>
-               </div>`
-            : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
-
-          return `<tr>
-            <td>
-              <div style="font-weight:600">${s.name}</div>
-              <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
-            </td>
-            <td><span class="badge badge-blue">${s.kelompok}</span></td>
-            <td style="font-family:var(--font-mono);font-size:13px">${s.date}</td>
-            <td style="font-family:var(--font-mono);font-size:13px">${s.check_in_time || '—'}</td>
-            <td style="font-family:var(--font-mono);font-size:13px">${s.check_out_time || '—'}</td>
-            <td style="max-width:180px;white-space:normal;font-size:13px">${s.keterangan}</td>
-            <td>${buktiBtn}</td>
-            <td>${statusBadge}</td>
-            <td>${actionBtns}</td>
-          </tr>`;
-        }).join('');
+        // Render using the filter function
+        renderKehadiranSubmissions(submissions);
 
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
@@ -1460,3 +1477,888 @@ const API = 'http://localhost:5000/api';
 
     // ─── Init ────────────────────────────────────────────────────────────────────
     loadDashboard();
+// ─── Excel Upload Functions ──────────────────────────────────────────────
+function toggleAddMethod() {
+  const method = document.getElementById('add-method-select').value;
+  const manualMethod = document.getElementById('manual-method');
+  const excelMethod = document.getElementById('excel-method');
+  const manualBtn = document.getElementById('mhs-submit-btn');
+  const excelBtn = document.getElementById('excel-submit-btn');
+  
+  if (method === 'manual') {
+    manualMethod.style.display = 'block';
+    excelMethod.style.display = 'none';
+    manualBtn.style.display = 'inline-flex';
+    excelBtn.style.display = 'none';
+  } else {
+    manualMethod.style.display = 'none';
+    excelMethod.style.display = 'block';
+    manualBtn.style.display = 'none';
+    excelBtn.style.display = 'inline-flex';
+  }
+  
+  // Reset forms
+  resetMahasiswaForm();
+  resetExcelForm();
+}
+
+function resetExcelForm() {
+  document.getElementById('excel-file-input').value = '';
+  document.getElementById('excel-preview').style.display = 'none';
+  document.getElementById('excel-upload-progress').style.display = 'none';
+}
+
+async function downloadExcelTemplate() {
+  try {
+    const res = await fetch(API + '/mahasiswa/excel-template');
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'template_mahasiswa.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast('Template berhasil diunduh', 'Silakan isi data mahasiswa sesuai format');
+    } else {
+      toast('Gagal download template', 'Terjadi kesalahan server', true);
+    }
+  } catch (e) {
+    console.error('Error downloading template:', e);
+    toast('Gagal download template', 'Pastikan server berjalan', true);
+  }
+}
+
+async function handleExcelFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Validate file type
+  const allowedTypes = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel'
+  ];
+  
+  if (!allowedTypes.includes(file.type)) {
+    toast('Format file tidak didukung', 'Hanya file Excel (.xlsx, .xls)', true);
+    event.target.value = '';
+    return;
+  }
+  
+  // Validate file size (5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    toast('File terlalu besar', 'Maksimal 5MB', true);
+    event.target.value = '';
+    return;
+  }
+  
+  // Preview Excel data
+  await previewExcelData(file);
+}
+
+async function previewExcelData(file) {
+  const formData = new FormData();
+  formData.append('excel_file', file);
+  
+  try {
+    const res = await fetch(API + '/mahasiswa/excel-preview', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const result = await res.json();
+    
+    if (result.success) {
+      renderExcelPreview(result.data);
+    } else {
+      toast('Gagal preview Excel', result.message || 'Format file tidak sesuai', true);
+      document.getElementById('excel-file-input').value = '';
+    }
+  } catch (e) {
+    console.error('Error previewing Excel:', e);
+    toast('Gagal preview Excel', 'Pastikan server berjalan', true);
+    document.getElementById('excel-file-input').value = '';
+  }
+}
+
+function renderExcelPreview(data) {
+  const tbody = document.getElementById('excel-preview-tbody');
+  const summary = document.getElementById('excel-summary');
+  
+  let validCount = 0;
+  let invalidCount = 0;
+  let duplicateCount = 0;
+  
+  tbody.innerHTML = data.rows.map((row, index) => {
+    let status = 'Valid';
+    let statusClass = 'status-valid';
+    
+    // Check for validation errors
+    if (row.errors && row.errors.length > 0) {
+      status = row.errors.join(', ');
+      statusClass = 'status-invalid';
+      invalidCount++;
+    } else if (row.is_duplicate) {
+      status = 'ID Duplikat';
+      statusClass = 'status-duplicate';
+      duplicateCount++;
+    } else {
+      validCount++;
+    }
+    
+    return `
+      <tr>
+        <td>${row.mahasiswa_id || '-'}</td>
+        <td>${row.name || '-'}</td>
+        <td>${row.kelompok || '-'}</td>
+        <td>${row.jurusan || '-'}</td>
+        <td>${row.email || '-'}</td>
+        <td><span class="${statusClass}">${status}</span></td>
+      </tr>
+    `;
+  }).join('');
+  
+  summary.innerHTML = `
+    <strong>Total:</strong> ${data.rows.length} baris | 
+    <span style="color:var(--success)">Valid: ${validCount}</span> | 
+    <span style="color:var(--danger)">Error: ${invalidCount}</span> | 
+    <span style="color:var(--warning)">Duplikat: ${duplicateCount}</span>
+  `;
+  
+  document.getElementById('excel-preview').style.display = 'block';
+  
+  // Enable/disable submit button based on validation
+  const submitBtn = document.getElementById('excel-submit-btn');
+  if (validCount > 0) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = `Upload ${validCount} Data Valid`;
+  } else {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Tidak Ada Data Valid';
+  }
+}
+
+async function submitExcelMahasiswa() {
+  const fileInput = document.getElementById('excel-file-input');
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    toast('Pilih file Excel terlebih dahulu', '', true);
+    return;
+  }
+  
+  const formData = new FormData();
+  formData.append('excel_file', file);
+  
+  const btn = document.getElementById('excel-submit-btn');
+  const progressContainer = document.getElementById('excel-upload-progress');
+  const progressFill = document.getElementById('upload-progress-fill');
+  const statusText = document.getElementById('upload-status');
+  
+  btn.disabled = true;
+  btn.textContent = 'Mengupload...';
+  progressContainer.style.display = 'block';
+  
+  try {
+    // Simulate progress for better UX
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+      progress += Math.random() * 15;
+      if (progress > 90) progress = 90;
+      progressFill.style.width = progress + '%';
+      statusText.textContent = `Memproses... ${Math.round(progress)}%`;
+    }, 200);
+    
+    const res = await fetch(API + '/mahasiswa/excel-upload', {
+      method: 'POST',
+      body: formData
+    });
+    
+    clearInterval(progressInterval);
+    progressFill.style.width = '100%';
+    
+    const result = await res.json();
+    
+    if (result.success) {
+      statusText.textContent = `Berhasil! ${result.data.inserted} mahasiswa ditambahkan`;
+      toast('Upload Excel berhasil', `${result.data.inserted} mahasiswa berhasil ditambahkan`);
+      
+      setTimeout(() => {
+        closeModal('modal-mahasiswa');
+        loadMahasiswa(); // Refresh data
+        resetExcelForm();
+      }, 2000);
+    } else {
+      statusText.textContent = 'Upload gagal: ' + (result.message || 'Terjadi kesalahan');
+      toast('Upload Excel gagal', result.message || 'Terjadi kesalahan', true);
+    }
+  } catch (e) {
+    console.error('Error uploading Excel:', e);
+    statusText.textContent = 'Upload gagal: Koneksi bermasalah';
+    toast('Upload Excel gagal', 'Pastikan server berjalan', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload Data Excel';
+    
+    setTimeout(() => {
+      progressContainer.style.display = 'none';
+      progressFill.style.width = '0%';
+    }, 3000);
+  }
+}
+
+// ─── Enhanced Modal Functions ────────────────────────────────────────────
+function openAddMahasiswa() {
+  // Change modal title back to "Tambah Mahasiswa" and left-align it
+  const modalTitle = document.getElementById('modal-mahasiswa-title');
+  if (modalTitle) {
+    modalTitle.textContent = 'Tambah Mahasiswa';
+    modalTitle.style.textAlign = 'left';
+  }
+  
+  // Show method selection dropdown
+  const methodSelect = document.getElementById('add-method-select');
+  if (methodSelect && methodSelect.closest('.form-row')) {
+    methodSelect.closest('.form-row').style.display = '';
+  }
+  
+  // Reset to manual method by default
+  document.getElementById('add-method-select').value = 'manual';
+  toggleAddMethod();
+  
+  // Reset QR display
+  document.getElementById('qr-result-box').classList.remove('show');
+  document.getElementById('mhs-form').style.display = '';
+  document.getElementById('mhs-submit-btn').style.display = '';
+  
+  // Clear form fields
+  ['f-id', 'f-name', 'f-dept', 'f-pos', 'f-email', 'f-telp-mhs', 'f-telp-ortu'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) element.value = '';
+  });
+  
+  document.getElementById('modal-mahasiswa').classList.add('show');
+}
+
+function resetMahasiswaForm() {
+  ['f-id', 'f-name', 'f-dept', 'f-pos', 'f-email', 'f-telp-mhs', 'f-telp-ortu'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) element.value = '';
+  });
+  
+  const qrBox = document.getElementById('qr-result-box');
+  if (qrBox) qrBox.classList.remove('show');
+  
+  const form = document.getElementById('mhs-form');
+  if (form) form.style.display = '';
+}
+
+// ─── Initialize Enhanced Features ─────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Add event listener for method selection
+  const methodSelect = document.getElementById('add-method-select');
+  if (methodSelect) {
+    methodSelect.addEventListener('change', toggleAddMethod);
+  }
+});
+
+// ─── Filter Functions for Verifikasi Pengajuan ───────────────────────────────
+
+// Store original data
+let allIzinSubmissions = [];
+let allKehadiranSubmissions = [];
+
+function populateIzinKelompokFilter(submissions) {
+  const kelompokSet = new Set(submissions.map(s => s.kelompok).filter(k => k));
+  const select = document.getElementById('izin-filter-kelompok');
+  if (!select) return;
+  
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">Semua</option>' + 
+    Array.from(kelompokSet).sort().map(k => `<option value="${k}">${k}</option>`).join('');
+  if (currentValue) select.value = currentValue;
+}
+
+function filterIzinSubmissions() {
+  const searchTerm = document.getElementById('izin-search')?.value.toLowerCase() || '';
+  const filterKelompok = document.getElementById('izin-filter-kelompok')?.value || '';
+  const filterStatus = document.getElementById('izin-filter-status')?.value || '';
+  
+  let filtered = allIzinSubmissions;
+  
+  // Filter by name
+  if (searchTerm) {
+    filtered = filtered.filter(s => s.name.toLowerCase().includes(searchTerm));
+  }
+  
+  // Filter by kelompok
+  if (filterKelompok) {
+    filtered = filtered.filter(s => s.kelompok === filterKelompok);
+  }
+  
+  // Filter by status
+  if (filterStatus) {
+    filtered = filtered.filter(s => s.status === filterStatus);
+  }
+  
+  renderIzinSubmissions(filtered);
+}
+
+function renderIzinSubmissions(submissions) {
+  const tbody = document.getElementById('izin-submissions-table-body');
+  if (!tbody) return;
+  
+  if (!submissions.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Tidak ada data ditemukan</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = submissions.map(s => {
+    const statusBadge = {
+      pending:  '<span class="badge badge-yellow"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">schedule</span> Pending</span>',
+      approved: '<span class="badge badge-green"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check_circle</span> Disetujui</span>',
+      rejected: '<span class="badge badge-red"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">cancel</span> Ditolak</span>'
+    }[s.status] || s.status;
+
+    const typeBadge = s.submission_type === 'izin'
+      ? '<span class="badge badge-blue">Izin</span>'
+      : '<span class="badge badge-orange">Sakit</span>';
+
+    const buktiBtn = s.bukti_path
+      ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti(${s.id},'${s.bukti_path}')" title="Lihat Bukti">
+          <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
+         </button>`
+      : '<span style="color:var(--text-muted)">—</span>';
+
+    const actionBtns = s.status === 'pending'
+      ? `<div style="display:flex;gap:6px">
+          <button class="btn btn-sm" style="background:var(--success);color:#fff" onclick="approveIzin(${s.id})">
+            <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check</span> Setujui
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="openRejectModal(${s.id})">
+            <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">close</span> Tolak
+          </button>
+         </div>`
+      : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
+
+    return `<tr>
+      <td>
+        <div style="font-weight:600">${s.name}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
+      </td>
+      <td><span class="badge badge-blue">${s.kelompok}</span></td>
+      <td>${typeBadge}</td>
+      <td style="font-family:var(--font-mono);font-size:13px">${s.date}</td>
+      <td style="max-width:180px;white-space:normal;font-size:13px">${s.keterangan}</td>
+      <td>${buktiBtn}</td>
+      <td>${statusBadge}</td>
+      <td>${actionBtns}</td>
+    </tr>`;
+  }).join('');
+}
+
+function resetIzinFilter() {
+  document.getElementById('izin-search').value = '';
+  document.getElementById('izin-filter-kelompok').value = '';
+  document.getElementById('izin-filter-status').value = 'pending';
+  loadIzinSubmissions();
+}
+
+function populateKehadiranKelompokFilter(submissions) {
+  const kelompokSet = new Set(submissions.map(s => s.kelompok).filter(k => k));
+  const select = document.getElementById('kehadiran-filter-kelompok');
+  if (!select) return;
+  
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">Semua</option>' + 
+    Array.from(kelompokSet).sort().map(k => `<option value="${k}">${k}</option>`).join('');
+  if (currentValue) select.value = currentValue;
+}
+
+function filterKehadiranSubmissions() {
+  const searchTerm = document.getElementById('kehadiran-search')?.value.toLowerCase() || '';
+  const filterKelompok = document.getElementById('kehadiran-filter-kelompok')?.value || '';
+  const filterStatus = document.getElementById('kehadiran-filter-status')?.value || '';
+  
+  let filtered = allKehadiranSubmissions;
+  
+  // Filter by name
+  if (searchTerm) {
+    filtered = filtered.filter(s => s.name.toLowerCase().includes(searchTerm));
+  }
+  
+  // Filter by kelompok
+  if (filterKelompok) {
+    filtered = filtered.filter(s => s.kelompok === filterKelompok);
+  }
+  
+  // Filter by status
+  if (filterStatus) {
+    filtered = filtered.filter(s => s.status === filterStatus);
+  }
+  
+  renderKehadiranSubmissions(filtered);
+}
+
+function renderKehadiranSubmissions(submissions) {
+  const tbody = document.getElementById('kehadiran-submissions-table-body');
+  if (!tbody) return;
+  
+  if (!submissions.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">Tidak ada data ditemukan</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = submissions.map(s => {
+    const statusBadge = {
+      pending:  '<span class="badge badge-yellow"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">schedule</span> Pending</span>',
+      approved: '<span class="badge badge-green"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check_circle</span> Disetujui</span>',
+      rejected: '<span class="badge badge-red"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">cancel</span> Ditolak</span>'
+    }[s.status] || s.status;
+
+    const buktiBtn = s.bukti_path
+      ? `<button class="btn btn-ghost btn-sm" onclick="viewBukti(${s.id},'${s.bukti_path}')" title="Lihat Bukti">
+          <span class="material-symbols-outlined" style="font-size:14px">attach_file</span>
+         </button>`
+      : '<span style="color:var(--text-muted)">—</span>';
+
+    const actionBtns = s.status === 'pending'
+      ? `<div style="display:flex;gap:6px">
+          <button class="btn btn-sm" style="background:var(--success);color:#fff" onclick="approveKehadiran(${s.id})">
+            <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">check</span> Setujui
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="openRejectKehadiranModal(${s.id})">
+            <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">close</span> Tolak
+          </button>
+         </div>`
+      : `<span style="font-size:12px;color:var(--text-muted)">${s.verified_by || '—'}<br>${s.verified_at ? new Date(s.verified_at).toLocaleDateString('id-ID') : ''}</span>`;
+
+    return `<tr>
+      <td>
+        <div style="font-weight:600">${s.name}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${s.mahasiswa_id}</div>
+      </td>
+      <td><span class="badge badge-blue">${s.kelompok}</span></td>
+      <td style="font-family:var(--font-mono);font-size:13px">${s.date}</td>
+      <td style="font-family:var(--font-mono);font-size:13px">${s.check_in_time || '—'}</td>
+      <td style="font-family:var(--font-mono);font-size:13px">${s.check_out_time || '—'}</td>
+      <td style="max-width:180px;white-space:normal;font-size:13px">${s.keterangan}</td>
+      <td>${buktiBtn}</td>
+      <td>${statusBadge}</td>
+      <td>${actionBtns}</td>
+    </tr>`;
+  }).join('');
+}
+
+function resetKehadiranFilter() {
+  document.getElementById('kehadiran-search').value = '';
+  document.getElementById('kehadiran-filter-kelompok').value = '';
+  document.getElementById('kehadiran-filter-status').value = 'pending';
+  loadKehadiranSubmissions();
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// USER MANAGEMENT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+let usersData = [];
+let filteredUsersData = [];
+
+// Load all users
+async function loadUsers() {
+  try {
+    const token = getAuthToken();
+    const response = await fetch(`${API}/users`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      usersData = result.data;
+      filteredUsersData = [...usersData];
+      renderUsers();
+    } else {
+      toast('Error', result.message, true);
+    }
+  } catch (error) {
+    console.error('Error loading users:', error);
+    toast('Error', 'Gagal memuat data users', true);
+  }
+}
+
+// Render users table
+function renderUsers() {
+  const tbody = document.getElementById('users-tbody');
+  
+  if (filteredUsersData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Tidak ada data user</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = filteredUsersData.map(user => {
+    const statusBadge = user.is_active 
+      ? '<span class="badge badge-success">Aktif</span>' 
+      : '<span class="badge badge-danger">Nonaktif</span>';
+    
+    const roleBadge = user.role === 'admin' 
+      ? '<span class="badge badge-primary">Admin</span>'
+      : user.role === 'timdis'
+      ? '<span class="badge badge-info">Tim Disiplin</span>'
+      : '<span class="badge badge-secondary">Mahasiswa</span>';
+    
+    const lastLogin = user.last_login 
+      ? new Date(user.last_login).toLocaleString('id-ID')
+      : 'Belum pernah login';
+    
+    const mahasiswaId = user.mahasiswa_id || '-';
+    
+    return `
+      <tr>
+        <td><strong>${user.username}</strong></td>
+        <td>${user.full_name}</td>
+        <td>${user.email || '-'}</td>
+        <td>${roleBadge}</td>
+        <td>${mahasiswaId}</td>
+        <td>${statusBadge}</td>
+        <td style="font-size:12px">${lastLogin}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="editUser(${user.id})" title="Edit">
+            <span class="material-symbols-outlined" style="font-size:16px">edit</span>
+          </button>
+          ${user.is_active 
+            ? `<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(${user.id}, 0)" title="Nonaktifkan">
+                <span class="material-symbols-outlined" style="font-size:16px;color:var(--danger)">block</span>
+              </button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(${user.id}, 1)" title="Aktifkan">
+                <span class="material-symbols-outlined" style="font-size:16px;color:var(--success)">check_circle</span>
+              </button>`
+          }
+          <button class="btn btn-ghost btn-sm" onclick="resetUserPassword(${user.id})" title="Reset Password">
+            <span class="material-symbols-outlined" style="font-size:16px">lock_reset</span>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Filter users
+function filterUsers() {
+  const searchTerm = document.getElementById('user-search').value.toLowerCase();
+  const roleFilter = document.getElementById('user-filter-role').value;
+  const statusFilter = document.getElementById('user-filter-status').value;
+  
+  filteredUsersData = usersData.filter(user => {
+    const matchSearch = user.username.toLowerCase().includes(searchTerm) || 
+                       user.full_name.toLowerCase().includes(searchTerm);
+    const matchRole = !roleFilter || user.role === roleFilter;
+    const matchStatus = !statusFilter || user.is_active.toString() === statusFilter;
+    
+    return matchSearch && matchRole && matchStatus;
+  });
+  
+  renderUsers();
+}
+
+// Reset filter
+function resetUserFilter() {
+  document.getElementById('user-search').value = '';
+  document.getElementById('user-filter-role').value = '';
+  document.getElementById('user-filter-status').value = '';
+  filteredUsersData = [...usersData];
+  renderUsers();
+}
+
+// Open add user modal
+async function openAddUserModal() {
+  document.getElementById('user-modal-title').textContent = 'Tambah User';
+  document.getElementById('user-id').value = '';
+  document.getElementById('user-form').reset();
+  document.getElementById('password-row').style.display = '';
+  document.getElementById('user-password').required = true;
+  document.getElementById('user-username').disabled = false;
+  
+  // Load mahasiswa list for dropdown
+  await loadMahasiswaForUserForm();
+  
+  document.getElementById('modal-user').classList.add('show');
+}
+
+// Load mahasiswa list for user form
+async function loadMahasiswaForUserForm() {
+  try {
+    const response = await fetch(`${API}/mahasiswa`);
+    const result = await response.json();
+    
+    if (result.success) {
+      const select = document.getElementById('user-mahasiswa-id');
+      select.innerHTML = '<option value="">-- Pilih Mahasiswa --</option>';
+      
+      // Filter mahasiswa yang belum punya user account
+      const mahasiswaWithoutUser = result.data.filter(mhs => {
+        return !usersData.some(user => user.mahasiswa_id === mhs.id);
+      });
+      
+      mahasiswaWithoutUser.forEach(mhs => {
+        select.innerHTML += `<option value="${mhs.id}">${mhs.id} - ${mhs.name}</option>`;
+      });
+    }
+  } catch (error) {
+    console.error('Error loading mahasiswa:', error);
+  }
+}
+
+// Toggle mahasiswa field based on role
+function toggleMahasiswaField() {
+  const role = document.getElementById('user-role').value;
+  const mahasiswaRow = document.getElementById('mahasiswa-id-row');
+  const mahasiswaSelect = document.getElementById('user-mahasiswa-id');
+  
+  if (role === 'mahasiswa') {
+    mahasiswaRow.style.display = '';
+    mahasiswaSelect.required = true;
+  } else {
+    mahasiswaRow.style.display = 'none';
+    mahasiswaSelect.required = false;
+    mahasiswaSelect.value = '';
+  }
+}
+
+// Edit user
+async function editUser(userId) {
+  const user = usersData.find(u => u.id === userId);
+  if (!user) return;
+  
+  document.getElementById('user-modal-title').textContent = 'Edit User';
+  document.getElementById('user-id').value = user.id;
+  document.getElementById('user-username').value = user.username;
+  document.getElementById('user-username').disabled = true; // Username tidak bisa diubah
+  document.getElementById('user-fullname').value = user.full_name;
+  document.getElementById('user-email').value = user.email || '';
+  document.getElementById('user-role').value = user.role;
+  
+  // Hide password field when editing
+  document.getElementById('password-row').style.display = 'none';
+  document.getElementById('user-password').required = false;
+  
+  // Load mahasiswa list
+  await loadMahasiswaForUserForm();
+  
+  // Set mahasiswa_id if exists
+  if (user.mahasiswa_id) {
+    // Add current mahasiswa to dropdown if not exists
+    const select = document.getElementById('user-mahasiswa-id');
+    if (!Array.from(select.options).some(opt => opt.value === user.mahasiswa_id)) {
+      // Fetch mahasiswa info
+      const mhsResponse = await fetch(`${API}/mahasiswa`);
+      const mhsResult = await mhsResponse.json();
+      if (mhsResult.success) {
+        const mhs = mhsResult.data.find(m => m.id === user.mahasiswa_id);
+        if (mhs) {
+          select.innerHTML += `<option value="${mhs.id}">${mhs.id} - ${mhs.name}</option>`;
+        }
+      }
+    }
+    document.getElementById('user-mahasiswa-id').value = user.mahasiswa_id;
+  }
+  
+  toggleMahasiswaField();
+  document.getElementById('modal-user').classList.add('show');
+}
+
+// Submit user (create or update)
+async function submitUser(event) {
+  event.preventDefault();
+  
+  const userId = document.getElementById('user-id').value;
+  const username = document.getElementById('user-username').value.trim();
+  const password = document.getElementById('user-password').value;
+  const fullName = document.getElementById('user-fullname').value.trim();
+  const email = document.getElementById('user-email').value.trim();
+  const role = document.getElementById('user-role').value;
+  const mahasiswaId = document.getElementById('user-mahasiswa-id').value;
+  
+  // Validation
+  if (!username || !fullName || !role) {
+    toast('Error', 'Username, Nama Lengkap, dan Role wajib diisi', true);
+    return;
+  }
+  
+  if (!userId && !password) {
+    toast('Error', 'Password wajib diisi untuk user baru', true);
+    return;
+  }
+  
+  if (password && password.length < 6) {
+    toast('Error', 'Password minimal 6 karakter', true);
+    return;
+  }
+  
+  if (role === 'mahasiswa' && !mahasiswaId) {
+    toast('Error', 'Mahasiswa ID wajib diisi untuk role Mahasiswa', true);
+    return;
+  }
+  
+  try {
+    const token = getAuthToken();
+    const url = userId ? `${API}/users/${userId}` : `${API}/users`;
+    const method = userId ? 'PUT' : 'POST';
+    
+    const body = {
+      full_name: fullName,
+      email: email || null
+    };
+    
+    // Only include these fields when creating new user
+    if (!userId) {
+      body.username = username;
+      body.password = password;
+      body.role = role;
+      if (role === 'mahasiswa') {
+        body.mahasiswa_id = mahasiswaId;
+      }
+    }
+    
+    const response = await fetch(url, {
+      method: method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      toast('Berhasil', userId ? 'User berhasil diupdate' : 'User berhasil ditambahkan');
+      document.getElementById('modal-user').classList.remove('show');
+      loadUsers();
+    } else {
+      toast('Error', result.message, true);
+    }
+  } catch (error) {
+    console.error('Error submitting user:', error);
+    toast('Error', 'Gagal menyimpan user', true);
+  }
+}
+
+// Toggle user status (activate/deactivate)
+async function toggleUserStatus(userId, newStatus) {
+  const action = newStatus === 1 ? 'mengaktifkan' : 'menonaktifkan';
+  
+  if (!confirm(`Apakah Anda yakin ingin ${action} user ini?`)) {
+    return;
+  }
+  
+  try {
+    const token = getAuthToken();
+    const endpoint = newStatus === 1 ? 'activate' : 'deactivate';
+    
+    const response = await fetch(`${API}/users/${userId}/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      toast('Berhasil', `User berhasil ${newStatus === 1 ? 'diaktifkan' : 'dinonaktifkan'}`);
+      loadUsers();
+    } else {
+      toast('Error', result.message, true);
+    }
+  } catch (error) {
+    console.error('Error toggling user status:', error);
+    toast('Error', `Gagal ${action} user`, true);
+  }
+}
+
+// Reset user password
+async function resetUserPassword(userId) {
+  const user = usersData.find(u => u.id === userId);
+  if (!user) return;
+  
+  const newPassword = prompt(`Reset password untuk user: ${user.username}\n\nMasukkan password baru (minimal 6 karakter):`);
+  
+  if (!newPassword) return;
+  
+  if (newPassword.length < 6) {
+    toast('Error', 'Password minimal 6 karakter', true);
+    return;
+  }
+  
+  try {
+    const token = getAuthToken();
+    
+    // We need to use admin privilege to reset password
+    // This requires a new endpoint in api_server.py
+    const response = await fetch(`${API}/users/${userId}/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ new_password: newPassword })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      toast('Berhasil', 'Password berhasil direset');
+    } else {
+      toast('Error', result.message, true);
+    }
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    toast('Error', 'Gagal reset password', true);
+  }
+}
+
+// Get auth token
+function getAuthToken() {
+  return localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
+}
+
+// Add users page to showPage function
+// Note: We need to modify the existing showPage function to include users page
+// This is done by checking in the existing showPage function
+
+
+// ═══════════════════════════════════════════════════════════════
+// MODAL EVENT LISTENERS
+// ═══════════════════════════════════════════════════════════════
+
+// Close modal when clicking backdrop
+document.addEventListener('DOMContentLoaded', function() {
+  // Close modal user when clicking backdrop
+  const modalUser = document.getElementById('modal-user');
+  if (modalUser) {
+    modalUser.addEventListener('click', function(e) {
+      if (e.target === modalUser) {
+        modalUser.classList.remove('show');
+      }
+    });
+  }
+  
+  // Close modal mahasiswa when clicking backdrop (if not already handled)
+  const modalMahasiswa = document.getElementById('modal-mahasiswa');
+  if (modalMahasiswa) {
+    modalMahasiswa.addEventListener('click', function(e) {
+      if (e.target === modalMahasiswa) {
+        modalMahasiswa.classList.remove('show');
+      }
+    });
+  }
+});

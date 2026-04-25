@@ -1,6 +1,17 @@
 # SIABSEN — Sistem Absensi Mahasiswa
 
-Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams**, **Upload Video MP4**, **Form Pengajuan Izin/Sakit**, dan **MySQL database**.
+Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams**, **Upload Video MP4**, **Form Pengajuan Izin/Sakit**, **Authentication System**, dan **MySQL database**.
+
+## 📋 Daftar Isi
+
+- [Cara Kerja Sistem](#-cara-kerja-sistem)
+- [Fitur Utama](#-fitur-utama)
+- [Quick Start](#-quick-start)
+- [Authentication System](#-authentication-system)
+- [Training Model YOLO](#-training-model-yolo)
+- [API Endpoints](#-api-endpoints)
+- [Troubleshooting](#-troubleshooting)
+- [Team Structure](#-team-structure)
 
 ## 🎯 Cara Kerja Sistem
 
@@ -82,9 +93,7 @@ CCTV Stream / Video MP4 → YOLO Detection (QR Paper) → QR Decode → Mahasisw
 
 **Model default (`yolov8n.pt`) BELUM dilatih untuk mendeteksi QR code paper!**
 
-Anda perlu melatih model custom terlebih dahulu. Lihat panduan lengkap di:
-
-📖 **[TRAINING_GUIDE.md](TRAINING_GUIDE.md)**
+Anda perlu melatih model custom terlebih dahulu. Lihat panduan di section [Training Model YOLO](#-training-model-yolo) di bawah.
 
 ## 🚀 Quick Start
 
@@ -148,7 +157,23 @@ MYSQL_CONFIG = {
 python api_server.py
 ```
 
-Akses dashboard: **http://localhost:5000**
+Server akan otomatis:
+- Membuat tabel database
+- Membuat default admin: `admin` / `admin123`
+
+Akses aplikasi:
+- **Login**: http://localhost:5000/login
+- **Dashboard**: http://localhost:5000
+- **Portal Mahasiswa**: http://localhost:5000/mahasiswa
+- **Monitor**: http://localhost:5000/monitor
+
+### First Login
+
+1. Buka http://localhost:5000/login
+2. Login dengan:
+   - **Username**: `admin`
+   - **Password**: `admin123`
+3. ⚠️ **PENTING**: Ganti password default setelah login pertama!
 
 ## 📁 Struktur Project
 
@@ -194,6 +219,15 @@ Akses dashboard: **http://localhost:5000**
 ```
 
 ## 🌐 API Endpoints
+
+### User Management
+- `GET /api/users` - List all users (admin only)
+- `POST /api/users` - Create new user (admin only)
+- `GET /api/users/<id>` - Get user by ID (admin only)
+- `PUT /api/users/<id>` - Update user (admin only)
+- `POST /api/users/<id>/activate` - Activate user (admin only)
+- `POST /api/users/<id>/deactivate` - Deactivate user (admin only)
+- `POST /api/users/<id>/reset-password` - Reset user password (admin only)
 
 ### Mahasiswa
 - `GET /api/mahasiswa` - List semua mahasiswa
@@ -374,7 +408,268 @@ Mahasiswa Submit (Kehadiran) → Pending → Timdis Approve → Insert Attendanc
 | **Hasil** | Status: izin/sakit | Status: manual (hadir) |
 | **Jam** | Tidak perlu | Jam masuk & keluar **WAJIB** |
 
-## 👥 Menambah Mahasiswa
+## 🔐 Authentication System
+
+### Overview
+
+SIABSEN dilengkapi dengan sistem authentication & authorization lengkap:
+
+✅ **Login/Logout** dengan session management  
+✅ **Password Hashing** menggunakan bcrypt  
+✅ **Role-Based Access Control** (Admin, Timdis, Mahasiswa)  
+✅ **Session Token** dengan expiry 24 jam  
+✅ **Rate Limiting** (max 5 failed attempts dalam 15 menit)  
+✅ **Secure Cookies** (HttpOnly, SameSite)  
+
+### Roles & Permissions
+
+| Role | Dashboard | Verifikasi | Manage Users | Portal Mahasiswa |
+|------|-----------|------------|--------------|------------------|
+| **Admin** | ✅ Full | ✅ | ✅ | ✅ |
+| **Timdis** | ✅ Read | ✅ | ❌ | ✅ |
+| **Mahasiswa** | ❌ | ❌ | ❌ | ✅ |
+
+### Create Users
+
+Gunakan script `create_users.py`:
+
+```bash
+# Create default users (admin, timdis)
+python create_users.py default
+
+# Create accounts untuk semua mahasiswa
+python create_users.py mahasiswa
+
+# Create custom user (interactive)
+python create_users.py custom
+
+# List all users
+python create_users.py list
+```
+
+### API Authentication
+
+Semua endpoint protected menggunakan Bearer token:
+
+```bash
+# Login
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}'
+
+# Use token
+curl -X GET http://localhost:5000/api/mahasiswa \
+  -H "Authorization: Bearer <your_token>"
+
+# Logout
+curl -X POST http://localhost:5000/api/auth/logout \
+  -H "Authorization: Bearer <your_token>"
+```
+
+### Change Password
+
+```bash
+curl -X POST http://localhost:5000/api/auth/change-password \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "old_password": "admin123",
+    "new_password": "NewSecurePassword123!"
+  }'
+```
+
+Untuk dokumentasi lengkap, lihat **[AUTHENTICATION_GUIDE.md](AUTHENTICATION_GUIDE.md)**
+
+---
+
+## 🎓 Training Model YOLO
+
+### Overview
+
+Sistem menggunakan YOLOv8 untuk mendeteksi **QR code paper** (kertas/kartu berisi QR code). Model default belum dilatih, Anda perlu training custom model.
+
+### 1. Persiapan Dataset
+
+Kumpulkan minimal **500-1000 gambar** yang berisi:
+- Kertas QR code dipegang orang
+- Berbagai sudut (horizontal, vertikal, miring)
+- Berbagai pencahayaan (terang, redup, backlight)
+- Berbagai jarak (dekat, sedang, jauh)
+- Berbagai background
+
+**Tips:**
+- Gunakan kamera CCTV yang sama dengan deployment
+- Rekam video lalu extract frames
+- Variasi pose dan ukuran QR code
+
+### 2. Labeling Dataset
+
+Gunakan tools labeling:
+- **Roboflow** (recommended, cloud-based)
+- **LabelImg** (desktop app)
+- **CVAT** (web-based)
+
+**Format:** YOLO format (`.txt` file)
+
+```
+class_id center_x center_y width height
+```
+
+**Class:**
+- `0` = qr_paper (satu class saja)
+
+### 3. Struktur Dataset
+
+```
+dataset/
+├── train/
+│   ├── images/
+│   │   ├── img001.jpg
+│   │   └── ...
+│   └── labels/
+│       ├── img001.txt
+│       └── ...
+├── valid/
+│   ├── images/
+│   └── labels/
+└── data.yaml
+```
+
+**File `data.yaml`:**
+
+```yaml
+path: /path/to/dataset
+train: train/images
+val: valid/images
+
+nc: 1  # number of classes
+names: ['qr_paper']
+```
+
+### 4. Training Script
+
+Buat file `train_qr_model.py`:
+
+```python
+from ultralytics import YOLO
+
+# Load pretrained model
+model = YOLO('yolov8n.pt')  # nano (fastest)
+
+# Train
+results = model.train(
+    data='dataset/data.yaml',
+    epochs=100,
+    imgsz=640,
+    batch=16,
+    name='qr_paper_detector',
+    patience=20,
+    device=0,  # 0 = GPU, 'cpu' = CPU
+    augment=True
+)
+
+# Evaluate
+metrics = model.val()
+
+# Export (optional)
+model.export(format='onnx')
+```
+
+### 5. Jalankan Training
+
+```bash
+# Install ultralytics
+pip install ultralytics
+
+# Run training
+python train_qr_model.py
+```
+
+**Output:**
+- `runs/detect/qr_paper_detector/weights/best.pt` - model terbaik
+- `runs/detect/qr_paper_detector/weights/last.pt` - model terakhir
+
+**Target metrics:**
+- mAP50 > 0.85 (85%)
+- Precision > 0.80
+- Recall > 0.75
+
+### 6. Integrasi ke Sistem
+
+```bash
+# Copy model
+cp runs/detect/qr_paper_detector/weights/best.pt models/yolov8n.pt
+
+# Update class ID di attendance_engine.py
+# self.qr_paper_class_id = 0  # Sesuaikan dengan hasil training
+
+# Test
+python attendance_engine.py
+```
+
+### Training di Google Colab
+
+Jika tidak punya GPU lokal, gunakan Google Colab:
+
+```python
+# 1. Cek GPU
+!nvidia-smi
+
+# 2. Install Ultralytics
+!pip install ultralytics==8.0.196
+
+# 3. Import dataset dari Roboflow
+!pip install roboflow
+# (gunakan kode dari Roboflow Jupyter)
+
+# 4. Training
+!yolo task=detect mode=train model=yolov8s.pt \
+    data=/content/QR-Paper-Detection/data.yaml \
+    epochs=25 imgsz=640 plots=True
+
+# 5. Validasi
+!yolo task=detect mode=val \
+    model=/content/runs/detect/train/weights/best.pt \
+    data=/content/QR-Paper-Detection/data.yaml
+
+# 6. Download model
+from google.colab import files
+files.download("/content/runs/detect/train/weights/best.pt")
+```
+
+### Tips Meningkatkan Akurasi
+
+1. **Data Augmentation**: Brightness, rotation, blur, crop
+2. **Hyperparameter Tuning**: Learning rate, batch size, epochs
+3. **Model Size**: 
+   - `yolov8n` (3MB) - Fastest, Good accuracy
+   - `yolov8s` (11MB) - Fast, Better accuracy
+   - `yolov8m` (26MB) - Medium, Best accuracy
+
+### Testing Model
+
+```python
+from ultralytics import YOLO
+import cv2
+
+model = YOLO('models/yolov8n.pt')
+img = cv2.imread('test_image.jpg')
+
+results = model(img, conf=0.3)
+for r in results:
+    boxes = r.boxes
+    for box in boxes:
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        conf = float(box.conf[0])
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(img, f'{conf:.2f}', (x1, y1-10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+cv2.imshow('Result', img)
+cv2.waitKey(0)
+```
+
+---
 
 ### Via Dashboard
 
@@ -526,9 +821,6 @@ CREATE TABLE kehadiran_submissions (
 ### Database MySQL
 
 **Setup awal:**
-Lihat panduan lengkap di [MIGRASI_MYSQL.md](MIGRASI_MYSQL.md)
-
-**Error koneksi:**
 ```bash
 # Cek status MySQL
 sudo systemctl status mysql
@@ -539,26 +831,44 @@ sudo systemctl start mysql
 # Cek kredensial di config_db.py
 ```
 
-**Migrasi dari SQLite (jika ada data lama):**
+**Error koneksi:**
 ```bash
-python migrate_to_mysql.py
+# Reset database
+mysql -u root -p
 ```
-
-**Reset database:**
 ```sql
 DROP DATABASE siabsen;
 CREATE DATABASE siabsen CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 Kemudian restart aplikasi untuk auto-create tabel.
 
+### Authentication Issues
+
+**Problem: "Invalid or expired session"**
+
+**Solution:**
+- Session sudah expired (> 24 jam)
+- Login ulang untuk mendapatkan session token baru
+
+**Problem: "Terlalu banyak percobaan login gagal"**
+
+**Solution:**
+- Tunggu 15 menit, atau
+- Hapus manual dari database:
+```sql
+DELETE FROM login_attempts 
+WHERE username = 'admin' 
+AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE);
+```
+
 ### YOLO tidak mendeteksi QR paper
 
 **Penyebab:** Model belum dilatih untuk QR paper
 
 **Solusi:**
-1. Ikuti panduan di `TRAINING_GUIDE.md`
-2. Training model custom
-3. Ganti model di `models/yolov8n.pt`
+1. Training model custom (lihat section Training YOLO)
+2. Turunkan confidence threshold: `YOLO_CONF_THRESHOLD = 0.2`
+3. Cek apakah class ID sudah benar
 
 ### RTSP stream tidak connect
 
@@ -584,14 +894,6 @@ Kemudian restart aplikasi untuk auto-create tabel.
 3. Pastikan folder `data/uploads` ada dan writable
 4. Cek log: `tail -f logs/attendance.log`
 
-### Preview video tidak menampilkan bounding box
-
-**Solusi:**
-1. Pastikan jsQR library ter-load (cek console browser)
-2. QR code harus jelas dan tidak terlalu kecil
-3. Putar video untuk trigger deteksi
-4. Cek pencahayaan dalam video
-
 ### Form izin/sakit tidak muncul
 
 **Solusi:**
@@ -600,30 +902,47 @@ Kemudian restart aplikasi untuk auto-create tabel.
 3. Pastikan API server berjalan
 4. Cek endpoint: `curl http://localhost:5000/api/izin/list`
 
-### Bukti izin tidak bisa diupload
+### Dropdown mahasiswa kosong
 
 **Solusi:**
-1. Cek format: hanya JPG, PNG, PDF
-2. Cek ukuran: maksimal 10MB
-3. Pastikan folder `data/bukti_izin` ada dan writable
-4. Cek permission folder
-5. **Bukti WAJIB diupload** - tidak bisa submit tanpa bukti
+1. Buka Browser Console (F12)
+2. Test API: http://localhost:5000/api/mahasiswa
+3. Cek database:
+```sql
+SELECT * FROM mahasiswa WHERE is_active = 1;
+```
+4. Tambah data sample jika kosong
 
-### Dropdown kehadiran manual kosong
+### Module Not Found
 
-**Solusi:**
-1. Refresh halaman (Ctrl+F5)
-2. Dropdown kehadiran manual sekarang **independen** dari dropdown izin/sakit
-3. Kedua dropdown terisi otomatis saat halaman load
-4. Tidak perlu pilih mahasiswa di tab izin/sakit terlebih dahulu
+**Error:** `ModuleNotFoundError: No module named 'bcrypt'`
 
-### Pengaturan sistem tidak tersimpan
+**Solution:**
+```bash
+pip install -r requirements.txt --upgrade
+```
 
-**Solusi:**
-1. Cek file `data/settings.json` ada dan writable
-2. Cek log error di console browser
-3. Restart engine/kamera setelah ubah pengaturan
-4. Validasi input: pastikan nilai dalam range yang benar
+### Quick Fix Commands
+
+```bash
+# 1. Restart server
+Ctrl+C  # Stop
+python api_server.py  # Start
+
+# 2. Reinstall dependencies
+pip install -r requirements.txt --upgrade
+
+# 3. Check MySQL
+mysql -u root -p -e "USE siabsen; SELECT COUNT(*) FROM mahasiswa;"
+
+# 4. Clear browser cache
+Ctrl+Shift+Delete
+
+# 5. Test API
+curl http://localhost:5000/api/mahasiswa
+```
+
+---
 
 ## 📈 Performance Tips
 
@@ -670,7 +989,14 @@ Kemudian restart aplikasi untuk auto-create tabel.
 
 ## 🆕 Changelog
 
+### Version 4.1 (2026-04-25)
+- ✅ **Bug Fix** - Perbaikan duplikasi HTML di mahasiswa.html
+- ✅ **Code Cleanup** - Menghapus file dokumentasi bug fix yang sudah selesai
+- ✅ **File Optimization** - Menghapus file backup dan script yang tidak diperlukan
+- ✅ **Struktur Project** - Merapikan struktur file untuk maintenance yang lebih mudah
+
 ### Version 4.0 (2026-04-22)
+- ✅ **Authentication System** - Login/logout dengan role-based access control
 - ✅ **Kehadiran Manual** - Form pengajuan untuk mahasiswa yang hadir tapi tidak tercatat
 - ✅ **Jam keluar WAJIB** di form kehadiran manual
 - ✅ **Bukti WAJIB** untuk izin/sakit dan kehadiran manual
@@ -679,11 +1005,6 @@ Kemudian restart aplikasi untuk auto-create tabel.
 - ✅ **Pencarian Mahasiswa** - Filter nama, kelompok, jurusan
 - ✅ **Status Izin/Sakit** di dashboard dan export CSV
 - ✅ **Material Icons** menggantikan emoji untuk UI lebih professional
-- ✅ **Hapus kolom ID** di tabel verifikasi (hanya tampilkan data penting)
-- ✅ **Hapus tap highlight** untuk UX mobile yang lebih baik
-- ✅ **Dropdown independen** - Kehadiran manual tidak bergantung pada izin/sakit
-- ✅ **Mahasiswa.js eksternal** - JavaScript terpisah dari HTML
-- ✅ **Mahasiswa.css standalone** - CSS tidak bergantung pada style.css
 
 ### Version 3.2 (2026-04-20)
 - ✅ **Form Pengajuan Izin/Sakit** dengan upload bukti
@@ -720,10 +1041,15 @@ Contributions welcome! Please:
 4. Push to branch
 5. Create Pull Request
 
+## 📚 Documentation
+
+- **[README.md](README.md)** - Dokumentasi utama (file ini)
+- **[AUTHENTICATION_GUIDE.md](AUTHENTICATION_GUIDE.md)** - Panduan lengkap authentication system
+
 ---
 
-**Version:** 4.0 (MySQL + Video Upload + Izin/Sakit + Kehadiran Manual + Settings)  
-**Last Updated:** 2026-04-22
+**Version:** 4.1 (MySQL + Video Upload + Izin/Sakit + Kehadiran Manual + Authentication + Settings + Bug Fixes)  
+**Last Updated:** 2026-04-25
 
 ---
 

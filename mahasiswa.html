@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SIABSEN — Portal Mahasiswa</title>
+  <link rel="stylesheet" href="static/css/style.css">
   <link rel="stylesheet" href="static/css/mahasiswa.css">
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"
@@ -14,174 +15,702 @@
 
 <body>
 
-  <div class="mahasiswa-header">
-    <h1><span class="material-symbols-outlined" style="font-size:32px;vertical-align:middle">school</span> Portal Mahasiswa SIABSEN</h1>
-    <p>Form Pengajuan Izin, Sakit & Kehadiran Manual</p>
+  <div class="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">
+          <img src="static/img/logo.png" alt="Logo" class="logo-icon">
+          <div>
+            <div class="logo-text">SIABSEN</div>
+            <div class="logo-sub">Portal Mahasiswa</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="nav">
+        <div class="nav-section">Menu Utama</div>
+        
+        <div class="nav-item active" onclick="showSection('dashboard')" id="nav-dashboard">
+          <span class="material-symbols-outlined icon">dashboard</span>
+          Dashboard
+        </div>
+        
+        <div class="nav-item" onclick="showSection('profile')" id="nav-profile">
+          <span class="material-symbols-outlined icon">person</span>
+          Edit Profil
+        </div>
+        
+        <div class="nav-item" onclick="showSection('riwayat')" id="nav-riwayat">
+          <span class="material-symbols-outlined icon">history</span>
+          Riwayat Kehadiran
+        </div>
+        
+        <div class="nav-section">Pengajuan</div>
+        
+        <div class="nav-item" onclick="showSection('izin')" id="nav-izin">
+          <span class="material-symbols-outlined icon">edit_note</span>
+          Pengajuan Izin/Sakit
+        </div>
+        
+        <div class="nav-item" onclick="showSection('kehadiran')" id="nav-kehadiran">
+          <span class="material-symbols-outlined icon">how_to_reg</span>
+          Pengajuan Kehadiran
+        </div>
+        
+        <div class="nav-section">Lainnya</div>
+        
+        <div class="nav-item" onclick="showSection('sertifikat')" id="nav-sertifikat">
+          <span class="material-symbols-outlined icon">workspace_premium</span>
+          Unduh Sertifikat
+        </div>
+      </nav>
+
+      <!-- Footer -->
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        Sistem Aktif<br>
+        <span id="current-time" style="font-family:var(--mono);font-size:10px;opacity:.6"></span>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Page Header -->
+      <div class="page-header">
+        <div>
+          <div class="page-title">Portal Mahasiswa SIABSEN</div>
+          <div class="page-sub" id="welcome-message">Dashboard & Manajemen Kehadiran</div>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-ghost btn-sm" onclick="window.location.href='/'">
+            <span class="material-symbols-outlined" style="font-size:16px">admin_panel_settings</span>
+            Dashboard Admin
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== SECTION: DASHBOARD ===== -->
+      <section id="section-dashboard">
+        <!-- Pilih Mahasiswa -->
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">badge</span>
+              Pilih Mahasiswa
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Mahasiswa *</label>
+            <select id="dashboard-mahasiswa-select" class="form-input" onchange="loadDashboardData()">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Dashboard Statistics -->
+        <div id="dashboard-stats" style="display:none">
+          <!-- Stats Cards Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">calendar_month</span>
+              <div class="stat-label">Total Hari Hadir</div>
+              <div class="stat-value" id="stat-total-hadir">0</div>
+              <div class="stat-delta">Kehadiran keseluruhan</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">check_circle</span>
+              <div class="stat-label">Hadir Bulan Ini</div>
+              <div class="stat-value" id="stat-bulan-ini">0</div>
+              <div class="stat-delta">Bulan berjalan</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">schedule</span>
+              <div class="stat-label">Izin/Sakit</div>
+              <div class="stat-value" id="stat-izin-sakit">0</div>
+              <div class="stat-delta">Total pengajuan</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">event_busy</span>
+              <div class="stat-label">Tidak Hadir</div>
+              <div class="stat-value" id="stat-tidak-hadir">0</div>
+              <div class="stat-delta">Tanpa keterangan</div>
+            </div>
+          </div>
+
+          <!-- Additional Stats Row -->
+          <div class="stats-grid" style="margin-top:16px">
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">percent</span>
+              <div class="stat-label">Persentase Kehadiran</div>
+              <div class="stat-value" id="stat-percentage">0%</div>
+              <div class="stat-delta">Tingkat kehadiran</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">avg_time</span>
+              <div class="stat-label">Rata-rata Durasi</div>
+              <div class="stat-value" id="stat-avg-duration">0 jam</div>
+              <div class="stat-delta">Per hari kerja</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">trending_up</span>
+              <div class="stat-label">Streak Terpanjang</div>
+              <div class="stat-value" id="stat-longest-streak">0 hari</div>
+              <div class="stat-delta">Berturut-turut</div>
+            </div>
+            <div class="stat-card">
+              <span class="material-symbols-outlined stat-icon">schedule</span>
+              <div class="stat-label">Terlambat</div>
+              <div class="stat-value" id="stat-late-count">0 kali</div>
+              <div class="stat-delta">Total keterlambatan</div>
+            </div>
+          </div>
+
+          <!-- Chart Kehadiran -->
+          <div class="panel">
+            <div class="section-header">
+              <div class="section-title">
+                <span class="material-symbols-outlined">bar_chart</span>
+                Grafik Kehadiran 7 Hari Terakhir
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="attendance-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Monthly Performance Chart -->
+          <div class="panel">
+            <div class="section-header">
+              <div class="section-title">
+                <span class="material-symbols-outlined">analytics</span>
+                Performa Bulanan
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="monthly-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div class="panel">
+            <div class="section-header">
+              <div class="section-title">
+                <span class="material-symbols-outlined">notifications</span>
+                Aktivitas Terbaru
+              </div>
+            </div>
+            <div id="recent-activity">
+              <div class="empty-state">Belum ada aktivitas</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: EDIT PROFIL ===== -->
+      <section id="section-profile" style="display:none">
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">person</span>
+              Edit Profil Mahasiswa
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <label class="form-label">Pilih Mahasiswa *</label>
+            <select id="profile-mahasiswa-select" class="form-input" onchange="loadProfileData()">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+
+          <div id="profile-form" style="display:none">
+            <div class="form-row">
+              <label class="form-label">ID Mahasiswa</label>
+              <input type="text" id="profile-id" class="form-input" disabled>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">Nama Lengkap *</label>
+              <input type="text" id="profile-name" class="form-input" placeholder="Nama Lengkap">
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">Kelompok *</label>
+              <input type="text" id="profile-kelompok" class="form-input" placeholder="Kelompok">
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">Jurusan *</label>
+              <input type="text" id="profile-jurusan" class="form-input" placeholder="Jurusan">
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">Email</label>
+              <input type="email" id="profile-email" class="form-input" placeholder="email@student.ac.id">
+            </div>
+
+            <div class="btn-group">
+              <button class="btn btn-primary" onclick="updateProfile()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">save</span>
+                Simpan Perubahan
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: RIWAYAT KEHADIRAN ===== -->
+      <section id="section-riwayat" style="display:none">
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">history</span>
+              Riwayat Kehadiran
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <label class="form-label">Pilih Mahasiswa *</label>
+            <select id="riwayat-mahasiswa-select" class="form-input" onchange="loadRiwayatData()">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+
+          <div id="riwayat-filters" style="display:none">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px">
+              <div class="form-row" style="margin:0">
+                <label class="form-label">Hari</label>
+                <select id="filter-hari" class="form-input" onchange="filterRiwayat()">
+                  <option value="">Semua</option>
+                  <option value="0">Minggu</option>
+                  <option value="1">Senin</option>
+                  <option value="2">Selasa</option>
+                  <option value="3">Rabu</option>
+                  <option value="4">Kamis</option>
+                  <option value="5">Jumat</option>
+                  <option value="6">Sabtu</option>
+                </select>
+              </div>
+              <div class="form-row" style="margin:0">
+                <label class="form-label">Bulan</label>
+                <select id="filter-bulan" class="form-input" onchange="filterRiwayat()">
+                  <option value="">Semua</option>
+                  <option value="01">Januari</option>
+                  <option value="02">Februari</option>
+                  <option value="03">Maret</option>
+                  <option value="04">April</option>
+                  <option value="05">Mei</option>
+                  <option value="06">Juni</option>
+                  <option value="07">Juli</option>
+                  <option value="08">Agustus</option>
+                  <option value="09">September</option>
+                  <option value="10">Oktober</option>
+                  <option value="11">November</option>
+                  <option value="12">Desember</option>
+                </select>
+              </div>
+              <div class="form-row" style="margin:0">
+                <label class="form-label">Tahun</label>
+                <select id="filter-tahun" class="form-input" onchange="filterRiwayat()">
+                  <option value="">Semua</option>
+                </select>
+              </div>
+              <div class="form-row" style="margin:0">
+                <label class="form-label">Status</label>
+                <select id="filter-status" class="form-input" onchange="filterRiwayat()">
+                  <option value="">Semua</option>
+                  <option value="present">Hadir</option>
+                  <option value="izin">Izin</option>
+                  <option value="sakit">Sakit</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-top:16px;display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="resetRiwayatFilter()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
+                Reset Filter
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="exportRiwayatCSV()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span>
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <div id="riwayat-table-container" style="display:none;margin-top:20px">
+            <table class="att-table">
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Tanggal</th>
+                  <th>Hari</th>
+                  <th>Jam Masuk</th>
+                  <th>Jam Keluar</th>
+                  <th>Durasi</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="riwayat-table-body">
+                <tr>
+                  <td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Pilih mahasiswa untuk melihat riwayat</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: PENGAJUAN IZIN/SAKIT ===== -->
+      <section id="section-izin" style="display:none">
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">edit_note</span>
+              Form Pengajuan Izin/Sakit
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <label class="form-label">Mahasiswa *</label>
+            <select id="izin-mahasiswa-select" class="form-input" onchange="loadMyIzinHistory()">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Jenis Pengajuan *</label>
+            <select id="izin-type-select" class="form-input">
+              <option value="izin">Izin</option>
+              <option value="sakit">Sakit</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Tanggal *</label>
+            <input type="date" id="izin-date-input" class="form-input" required>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Keterangan *</label>
+            <textarea id="izin-keterangan-input" class="form-input" rows="4" 
+                      placeholder="Jelaskan alasan izin/sakit Anda..." required></textarea>
+            <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+              Minimal 10 karakter
+            </small>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Upload Bukti *</label>
+            <input type="file" id="izin-bukti-input" class="form-input" 
+                   accept=".jpg,.jpeg,.png,.pdf" required>
+            <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+              Format: JPG, PNG, PDF · Maksimal 10MB · Wajib upload bukti (surat dokter, surat izin, dll)
+            </small>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="submitIzin()">
+              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">send</span>
+              Kirim Pengajuan
+            </button>
+            <button class="btn btn-ghost" onclick="resetIzinForm()">Reset</button>
+          </div>
+        </div>
+
+        <!-- Riwayat Pengajuan Izin -->
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">history</span>
+              Riwayat Pengajuan Izin/Sakit
+            </div>
+          </div>
+          
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Jenis</th>
+                <th>Status</th>
+                <th>Diverifikasi Oleh</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="my-izin-table-body">
+              <tr>
+                <td colspan="5" style="text-align:center;color:var(--muted);padding:30px">
+                  Pilih mahasiswa untuk melihat riwayat
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: PENGAJUAN KEHADIRAN MANUAL ===== -->
+      <section id="section-kehadiran" style="display:none">
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">how_to_reg</span>
+              Form Pengajuan Kehadiran Manual
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <label class="form-label">Mahasiswa *</label>
+            <select id="kehadiran-mahasiswa-select" class="form-input" onchange="loadMyKehadiranHistory()">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Tanggal *</label>
+            <input type="date" id="kehadiran-date-input" class="form-input" required>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Jam Masuk *</label>
+            <input type="time" id="kehadiran-checkin-input" class="form-input" required>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Jam Keluar *</label>
+            <input type="time" id="kehadiran-checkout-input" class="form-input" required>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Keterangan *</label>
+            <textarea id="kehadiran-keterangan-input" class="form-input" rows="4" 
+                      placeholder="Jelaskan kenapa kehadiran tidak tercatat (contoh: lupa bawa kartu QR, kamera mati, dll)..." required></textarea>
+            <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+              Minimal 10 karakter
+            </small>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">Upload Bukti *</label>
+            <input type="file" id="kehadiran-bukti-input" class="form-input" 
+                   accept=".jpg,.jpeg,.png,.pdf" required>
+            <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+              Format: JPG, PNG, PDF · Maksimal 10MB · Wajib upload bukti (foto selfie di lokasi, dll)
+            </small>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="submitKehadiran()">
+              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">send</span>
+              Kirim Pengajuan
+            </button>
+            <button class="btn btn-ghost" onclick="resetKehadiranForm()">Reset</button>
+          </div>
+        </div>
+
+        <!-- Riwayat Pengajuan -->
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">history</span>
+              Riwayat Pengajuan Saya
+            </div>
+          </div>
+          
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Nama Mahasiswa</th>
+                <th>Kelompok</th>
+                <th>Jurusan</th>
+                <th>Status</th>
+                <th>Diverifikasi Oleh</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="my-kehadiran-table-body">
+              <tr>
+                <td colspan="7" style="text-align:center;color:var(--muted);padding:30px">
+                  Pilih mahasiswa untuk melihat riwayat
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== SECTION: UNDUH SERTIFIKAT ===== -->
+      <section id="section-sertifikat" style="display:none">
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">workspace_premium</span>
+              Unduh Sertifikat Kehadiran
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <label class="form-label">Pilih Mahasiswa *</label>
+            <select id="sertifikat-mahasiswa-select" class="form-input" onchange="loadSertifikatData()">
+              <option value="">-- Pilih Mahasiswa --</option>
+            </select>
+          </div>
+
+          <div id="sertifikat-options" style="display:none">
+            <div class="form-row">
+              <label class="form-label">Periode Sertifikat *</label>
+              <select id="sertifikat-periode" class="form-input">
+                <option value="monthly">Bulanan</option>
+                <option value="semester">Semester</option>
+                <option value="yearly">Tahunan</option>
+                <option value="custom">Periode Kustom</option>
+              </select>
+            </div>
+
+            <div class="form-row" id="periode-monthly" style="display:none">
+              <label class="form-label">Pilih Bulan</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <select id="sertifikat-bulan" class="form-input">
+                  <option value="01">Januari</option>
+                  <option value="02">Februari</option>
+                  <option value="03">Maret</option>
+                  <option value="04">April</option>
+                  <option value="05">Mei</option>
+                  <option value="06">Juni</option>
+                  <option value="07">Juli</option>
+                  <option value="08">Agustus</option>
+                  <option value="09">September</option>
+                  <option value="10">Oktober</option>
+                  <option value="11">November</option>
+                  <option value="12">Desember</option>
+                </select>
+                <select id="sertifikat-tahun-monthly" class="form-input">
+                  <!-- Will be populated by JS -->
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row" id="periode-semester" style="display:none">
+              <label class="form-label">Pilih Semester</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <select id="sertifikat-semester" class="form-input">
+                  <option value="ganjil">Ganjil (Sep - Jan)</option>
+                  <option value="genap">Genap (Feb - Jun)</option>
+                </select>
+                <select id="sertifikat-tahun-semester" class="form-input">
+                  <!-- Will be populated by JS -->
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row" id="periode-yearly" style="display:none">
+              <label class="form-label">Pilih Tahun</label>
+              <select id="sertifikat-tahun-yearly" class="form-input">
+                <!-- Will be populated by JS -->
+              </select>
+            </div>
+
+            <div id="periode-custom" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="form-row" style="margin:0">
+                  <label class="form-label">Dari Tanggal</label>
+                  <input type="date" id="sertifikat-start-date" class="form-input">
+                </div>
+                <div class="form-row" style="margin:0">
+                  <label class="form-label">Sampai Tanggal</label>
+                  <input type="date" id="sertifikat-end-date" class="form-input">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">Template Sertifikat</label>
+              <select id="sertifikat-template" class="form-input">
+                <option value="formal">Formal - Resmi</option>
+                <option value="modern">Modern - Minimalis</option>
+                <option value="classic">Klasik - Tradisional</option>
+              </select>
+            </div>
+
+            <!-- Preview Statistik -->
+            <div id="sertifikat-preview" class="panel" style="background:var(--primary-light);border:1px solid var(--primary);margin-top:20px;display:none">
+              <div class="section-header">
+                <div class="section-title" style="color:var(--primary)">
+                  <span class="material-symbols-outlined">preview</span>
+                  Preview Statistik Sertifikat
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-top:16px">
+                <div style="text-align:center">
+                  <div style="font-size:24px;font-weight:700;color:var(--primary)" id="preview-total-hadir">0</div>
+                  <div style="font-size:12px;color:var(--text-muted)">Total Hadir</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:24px;font-weight:700;color:var(--success)" id="preview-persentase">0%</div>
+                  <div style="font-size:12px;color:var(--text-muted)">Persentase</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:24px;font-weight:700;color:var(--warning)" id="preview-total-izin">0</div>
+                  <div style="font-size:12px;color:var(--text-muted)">Izin/Sakit</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:24px;font-weight:700;color:var(--text-secondary)" id="preview-total-hari">0</div>
+                  <div style="font-size:12px;color:var(--text-muted)">Total Hari</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="btn-group" style="margin-top:20px">
+              <button class="btn btn-primary" onclick="generateSertifikat()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">download</span>
+                Generate & Download Sertifikat
+              </button>
+              <button class="btn btn-ghost" onclick="previewSertifikat()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">preview</span>
+                Preview
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Riwayat Sertifikat -->
+        <div class="panel">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="material-symbols-outlined">history</span>
+              Riwayat Sertifikat yang Diunduh
+            </div>
+          </div>
+          
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>Tanggal Generate</th>
+                <th>Periode</th>
+                <th>Template</th>
+                <th>Total Hadir</th>
+                <th>Persentase</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="sertifikat-history-table">
+              <tr>
+                <td colspan="6" style="text-align:center;color:var(--muted);padding:30px">
+                  Pilih mahasiswa untuk melihat riwayat
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
   </div>
 
-  <div class="mahasiswa-container">
-    
-    <!-- Info Box -->
-    <div class="info-box">
-      <p><strong>ℹ️ Informasi:</strong> Gunakan form <strong>Izin/Sakit</strong> jika tidak hadir. Gunakan form <strong>Kehadiran Manual</strong> jika hadir tapi tidak tercatat sistem.</p>
-    </div>
-
-    <!-- Tab Navigation -->
-    <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid var(--border)">
-      <button class="tab-btn active" onclick="switchTab('izin')" id="tab-izin">
-        <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">edit_note</span>
-        Izin/Sakit
-      </button>
-      <button class="tab-btn" onclick="switchTab('kehadiran')" id="tab-kehadiran">
-        <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">how_to_reg</span>
-        Kehadiran Manual
-      </button>
-    </div>
-
-    <!-- Form Pengajuan Izin/Sakit -->
-    <div class="mahasiswa-card" id="form-izin">
-      <div class="card-title">
-        <span class="material-symbols-outlined">edit_note</span>
-        Form Pengajuan Izin/Sakit
-      </div>
-      
-      <div class="form-row">
-        <label class="form-label">Mahasiswa *</label>
-        <select id="izin-mahasiswa-select" class="form-input">
-          <option value="">-- Pilih Mahasiswa --</option>
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Jenis Pengajuan *</label>
-        <select id="izin-type-select" class="form-input">
-          <option value="izin">Izin</option>
-          <option value="sakit">Sakit</option>
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Tanggal *</label>
-        <input type="date" id="izin-date-input" class="form-input" required>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Keterangan *</label>
-        <textarea id="izin-keterangan-input" class="form-input" rows="4" 
-                  placeholder="Jelaskan alasan izin/sakit Anda..." required></textarea>
-        <div class="form-hint">
-          Minimal 10 karakter
-        </div>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Upload Bukti *</label>
-        <input type="file" id="izin-bukti-input" class="form-input" 
-               accept=".jpg,.jpeg,.png,.pdf" required>
-        <div class="form-hint">
-          Format: JPG, PNG, PDF · Maksimal 10MB · Wajib upload bukti (surat dokter, surat izin, dll)
-        </div>
-      </div>
-
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="submitIzin()">
-          <span class="material-symbols-outlined icon-md">send</span>
-          Kirim Pengajuan
-        </button>
-        <button class="btn btn-ghost" onclick="resetIzinForm()">Reset</button>
-      </div>
-    </div>
-
-    <!-- Form Pengajuan Kehadiran Manual -->
-    <div class="mahasiswa-card" id="form-kehadiran" style="display:none">
-      <div class="card-title">
-        <span class="material-symbols-outlined">how_to_reg</span>
-        Form Pengajuan Kehadiran Manual
-      </div>
-      
-      <div class="form-row">
-        <label class="form-label">Mahasiswa *</label>
-        <select id="kehadiran-mahasiswa-select" class="form-input">
-          <option value="">-- Pilih Mahasiswa --</option>
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Tanggal *</label>
-        <input type="date" id="kehadiran-date-input" class="form-input" required>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Jam Masuk *</label>
-        <input type="time" id="kehadiran-checkin-input" class="form-input" required>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Jam Keluar *</label>
-        <input type="time" id="kehadiran-checkout-input" class="form-input" required>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Keterangan *</label>
-        <textarea id="kehadiran-keterangan-input" class="form-input" rows="4" 
-                  placeholder="Jelaskan kenapa kehadiran tidak tercatat (contoh: lupa bawa kartu QR, kamera mati, dll)..." required></textarea>
-        <div class="form-hint">
-          Minimal 10 karakter
-        </div>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Upload Bukti *</label>
-        <input type="file" id="kehadiran-bukti-input" class="form-input" 
-               accept=".jpg,.jpeg,.png,.pdf" required>
-        <div class="form-hint">
-          Format: JPG, PNG, PDF · Maksimal 10MB · Wajib upload bukti (foto selfie di lokasi, dll)
-        </div>
-      </div>
-
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="submitKehadiran()">
-          <span class="material-symbols-outlined icon-md">send</span>
-          Kirim Pengajuan
-        </button>
-        <button class="btn btn-ghost" onclick="resetKehadiranForm()">Reset</button>
-      </div>
-    </div>
-
-    <!-- Riwayat Pengajuan -->
-    <div class="mahasiswa-card">
-      <div class="card-title">
-        <span class="material-symbols-outlined">history</span>
-        Riwayat Pengajuan Saya
-      </div>
-      
-      <div class="overflow-auto">
-        <table class="att-table">
-          <thead>
-            <tr>
-              <th>Tanggal</th>
-              <th>Nama Mahasiswa</th>
-              <th>Kelompok</th>
-              <th>Jurusan</th>
-              <th>Status</th>
-              <th>Diverifikasi Oleh</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="my-izin-table-body">
-            <tr>
-              <td colspan="7" class="empty-state">
-                Pilih mahasiswa untuk melihat riwayat
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Modal Detail Bukti -->
+  <!-- Modals -->
   <div class="modal-backdrop" id="modal-bukti">
     <div class="modal modal-bukti">
       <div class="modal-title">Bukti Pengajuan</div>
@@ -284,7 +813,71 @@
     <div class="toast-msg" id="toast-msg"></div>
   </div>
 
-  <script src="static/js/mahasiswa.js"></script>
+  <script src="static/js/mahasiswa.js?v=3"></script>
+  <script>
+    // Handle sertifikat periode changes
+    document.getElementById('sertifikat-periode').addEventListener('change', function() {
+      const periode = this.value;
+      
+      // Hide all periode options
+      document.getElementById('periode-monthly').style.display = 'none';
+      document.getElementById('periode-semester').style.display = 'none';
+      document.getElementById('periode-yearly').style.display = 'none';
+      document.getElementById('periode-custom').style.display = 'none';
+      
+      // Show selected periode option
+      if (periode === 'monthly') {
+        document.getElementById('periode-monthly').style.display = 'block';
+      } else if (periode === 'semester') {
+        document.getElementById('periode-semester').style.display = 'block';
+      } else if (periode === 'yearly') {
+        document.getElementById('periode-yearly').style.display = 'block';
+      } else if (periode === 'custom') {
+        document.getElementById('periode-custom').style.display = 'block';
+      }
+      
+      // Update preview if mahasiswa selected
+      if (document.getElementById('sertifikat-mahasiswa-select').value) {
+        updateSertifikatPreview();
+      }
+    });
+
+    // Populate year dropdowns
+    function populateYearDropdowns() {
+      const currentYear = new Date().getFullYear();
+      const years = [];
+      for (let i = currentYear; i >= currentYear - 5; i--) {
+        years.push(i);
+      }
+      
+      const yearSelects = [
+        'sertifikat-tahun-monthly',
+        'sertifikat-tahun-semester', 
+        'sertifikat-tahun-yearly'
+      ];
+      
+      yearSelects.forEach(selectId => {
+        const select = document.getElementById(selectId);
+        select.innerHTML = '';
+        years.forEach(year => {
+          const option = document.createElement('option');
+          option.value = year;
+          option.textContent = year;
+          if (year === currentYear) option.selected = true;
+          select.appendChild(option);
+        });
+      });
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      populateYearDropdowns();
+      
+      // Set current month as default
+      const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+      document.getElementById('sertifikat-bulan').value = currentMonth;
+    });
+  </script>
 
 </body>
 

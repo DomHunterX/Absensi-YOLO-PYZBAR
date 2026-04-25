@@ -1,4 +1,18 @@
-from flask import Flask, Response, jsonify, request, send_file
+"""
+SIABSEN API Server
+REST API untuk sistem absensi dengan QR Code detection
+"""
+
+import sys
+import os
+
+# Fix Windows console encoding untuk Unicode characters
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
+from flask import Flask, Response, jsonify, request, send_file, redirect
 from flask_cors import CORS
 from pathlib import Path
 import json
@@ -10,16 +24,18 @@ import base64
 import threading
 import signal
 from werkzeug.utils import secure_filename
+from functools import wraps
 
 sys.path.insert(0, str(Path(__file__).parent))
 from database_manager import DatabaseManager
 from attendance_engine import QRCodeGenerator, QR_DIR, SNAPSHOT_DIR, create_system
+from auth_manager import AuthManager
 import logging
 
 logger = logging.getLogger('VideoProcessor')
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 
 # Konfigurasi upload
 UPLOAD_FOLDER = Path('data/uploads')
@@ -37,6 +53,84 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
 db, yolo, processor = create_system()
 
+# Initialize Authentication Manager
+auth = AuthManager(db)
+
+# ═══════════════════════════════════════════════════════════════
+# Authentication Middleware & Decorators
+# ═══════════════════════════════════════════════════════════════
+
+def get_session_token():
+    """Extract session token from request headers or cookies"""
+    # Try Authorization header first
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        return auth_header.split(' ')[1]
+    
+    # Try cookie
+    cookie_token = request.cookies.get('session_token')
+    if cookie_token:
+        return cookie_token
+    
+    # Try query parameter (for debugging only)
+    query_token = request.args.get('token')
+    if query_token:
+        return query_token
+    
+    return None
+
+def require_auth(roles=None):
+    """
+    Decorator untuk protect endpoints dengan authentication
+    roles: list of allowed roles, e.g. ['admin', 'timdis']
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            token = get_session_token()
+            
+            if not token:
+                return err('Authentication required', 401)
+            
+            # Validate session
+            validation = auth.validate_session(token)
+            
+            if not validation['valid']:
+                return err('Invalid or expired session', 401)
+            
+            user = validation['user']
+            
+            # Check role if specified
+            if roles and user['role'] not in roles:
+                return err('Access denied', 403)
+            
+            # Attach user to request context
+            request.current_user = user
+            
+            return f(*args, **kwargs)
+        
+        return decorated_function
+    return decorator
+
+def optional_auth(f):
+    """Decorator untuk endpoints yang bisa diakses dengan atau tanpa auth"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = get_session_token()
+        
+        if token:
+            validation = auth.validate_session(token)
+            if validation['valid']:
+                request.current_user = validation['user']
+            else:
+                request.current_user = None
+        else:
+            request.current_user = None
+        
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -48,6 +142,284 @@ def ok(data=None, msg='OK'):
 
 def err(msg, code=400):
     return jsonify({'success': False, 'message': msg}), code
+
+# ═══════════════════════════════════════════════════════════════
+# Authentication Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/login')
+def login_page():
+    """Serve login page"""
+    return send_file('login.html')
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login endpoint"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return err('Username dan password wajib diisi')
+        
+        # Get client IP
+        ip_address = request.remote_addr
+        
+        # Authenticate
+        result = auth.authenticate(username, password, ip_address)
+        
+        if result['success']:
+            # Create response with user data and token
+            response_data = {
+                'user': result['user'],
+                'session_token': result['session_token']
+            }
+            
+            response = jsonify({
+                'success': True,
+                'message': result['message'],
+                'data': response_data
+            })
+            
+            # Set secure cookie
+            response.set_cookie(
+                'session_token',
+                result['session_token'],
+                max_age=24*60*60,  # 24 hours
+                httponly=True,
+                samesite='Lax',
+                path='/'
+            )
+            
+            return response
+        else:
+            return err(result['message'], 401)
+            
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return err(f'Login gagal: {str(e)}', 500)
+
+@app.route('/api/auth/logout', methods=['POST'])
+@require_auth()
+def logout():
+    """Logout endpoint"""
+    try:
+        token = get_session_token()
+        auth.logout(token)
+        
+        response = ok(msg='Logout berhasil')
+        response.set_cookie('session_token', '', expires=0)
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return err(f'Logout gagal: {str(e)}', 500)
+
+@app.route('/api/auth/validate', methods=['GET'])
+def validate_session():
+    """Validate session token"""
+    try:
+        token = get_session_token()
+        
+        if not token:
+            return err('No session token', 401)
+        
+        validation = auth.validate_session(token)
+        
+        if validation['valid']:
+            return ok({'user': validation['user']}, 'Session valid')
+        else:
+            return err('Invalid session', 401)
+            
+    except Exception as e:
+        logger.error(f"Validation error: {e}")
+        return err(f'Validation gagal: {str(e)}', 500)
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_auth()
+def get_current_user():
+    """Get current logged in user info with mahasiswa data if role is mahasiswa"""
+    user = request.current_user
+    
+    # If user is mahasiswa, include mahasiswa data
+    if user['role'] == 'mahasiswa' and user.get('mahasiswa_id'):
+        mahasiswa = db._execute("""
+            SELECT * FROM mahasiswa WHERE id = %s AND is_active = 1
+        """, (user['mahasiswa_id'],), fetch_one=True)
+        
+        if mahasiswa:
+            user['mahasiswa'] = mahasiswa
+    
+    return ok(user)
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@require_auth()
+def change_password():
+    """Change password for current user"""
+    try:
+        data = request.get_json()
+        old_password = data.get('old_password')
+        new_password = data.get('new_password')
+        
+        if not old_password or not new_password:
+            return err('Password lama dan baru wajib diisi')
+        
+        if len(new_password) < 6:
+            return err('Password baru minimal 6 karakter')
+        
+        user_id = request.current_user['user_id']
+        result = auth.change_password(user_id, old_password, new_password)
+        
+        if result['success']:
+            return ok(msg=result['message'])
+        else:
+            return err(result['message'])
+            
+    except Exception as e:
+        logger.error(f"Change password error: {e}")
+        return err(f'Gagal mengubah password: {str(e)}', 500)
+
+# ═══════════════════════════════════════════════════════════════
+# User Management Endpoints (Admin only)
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/users', methods=['GET'])
+@require_auth(roles=['admin'])
+def list_users():
+    """List all users (admin only)"""
+    try:
+        role = request.args.get('role')
+        users = auth.get_all_users(role)
+        return ok(users)
+    except Exception as e:
+        logger.error(f"List users error: {e}")
+        return err(f'Gagal memuat users: {str(e)}', 500)
+
+@app.route('/api/users', methods=['POST'])
+@require_auth(roles=['admin'])
+def create_user():
+    """Create new user (admin only)"""
+    try:
+        data = request.get_json()
+        
+        required = ['username', 'password', 'full_name', 'role']
+        if not all(k in data for k in required):
+            return err('Field wajib: username, password, full_name, role')
+        
+        result = auth.create_user(
+            username=data['username'],
+            password=data['password'],
+            full_name=data['full_name'],
+            email=data.get('email', ''),
+            role=data['role'],
+            mahasiswa_id=data.get('mahasiswa_id')
+        )
+        
+        if result['success']:
+            return ok({'user_id': result['user_id']}, result['message'])
+        else:
+            return err(result['message'])
+            
+    except Exception as e:
+        logger.error(f"Create user error: {e}")
+        return err(f'Gagal membuat user: {str(e)}', 500)
+
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+@require_auth(roles=['admin'])
+def get_user(user_id):
+    """Get user by ID (admin only)"""
+    try:
+        user = auth.get_user_by_id(user_id)
+        if user:
+            return ok(user)
+        else:
+            return err('User tidak ditemukan', 404)
+    except Exception as e:
+        logger.error(f"Get user error: {e}")
+        return err(f'Gagal memuat user: {str(e)}', 500)
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@require_auth(roles=['admin'])
+def update_user(user_id):
+    """Update user (admin only)"""
+    try:
+        data = request.get_json()
+        result = auth.update_user(
+            user_id,
+            full_name=data.get('full_name'),
+            email=data.get('email')
+        )
+        
+        if result['success']:
+            return ok(msg=result['message'])
+        else:
+            return err(result['message'])
+            
+    except Exception as e:
+        logger.error(f"Update user error: {e}")
+        return err(f'Gagal update user: {str(e)}', 500)
+
+@app.route('/api/users/<int:user_id>/deactivate', methods=['POST'])
+@require_auth(roles=['admin'])
+def deactivate_user(user_id):
+    """Deactivate user (admin only)"""
+    try:
+        if auth.deactivate_user(user_id):
+            return ok(msg='User berhasil dinonaktifkan')
+        else:
+            return err('Gagal menonaktifkan user')
+    except Exception as e:
+        logger.error(f"Deactivate user error: {e}")
+        return err(f'Gagal menonaktifkan user: {str(e)}', 500)
+
+@app.route('/api/users/<int:user_id>/activate', methods=['POST'])
+@require_auth(roles=['admin'])
+def activate_user(user_id):
+    """Activate user (admin only)"""
+    try:
+        if auth.activate_user(user_id):
+            return ok(msg='User berhasil diaktifkan')
+        else:
+            return err('Gagal mengaktifkan user')
+    except Exception as e:
+        logger.error(f"Activate user error: {e}")
+        return err(f'Gagal mengaktifkan user: {str(e)}', 500)
+
+@app.route('/api/users/<int:user_id>/reset-password', methods=['POST'])
+@require_auth(roles=['admin'])
+def reset_user_password(user_id):
+    """Reset user password (admin only)"""
+    try:
+        data = request.get_json()
+        new_password = data.get('new_password')
+        
+        if not new_password:
+            return err('Password baru wajib diisi')
+        
+        if len(new_password) < 6:
+            return err('Password minimal 6 karakter')
+        
+        # Hash new password
+        password_hash = auth.hash_password(new_password)
+        
+        # Update password directly (admin privilege)
+        auth.db._execute("""
+            UPDATE users SET password_hash = %s WHERE id = %s
+        """, (password_hash, user_id))
+        
+        # Invalidate all sessions for this user (force re-login)
+        auth.db._execute("""
+            DELETE FROM sessions WHERE user_id = %s
+        """, (user_id,))
+        
+        logger.info(f"Password reset by admin for user_id: {user_id}")
+        return ok(msg='Password berhasil direset')
+        
+    except Exception as e:
+        logger.error(f"Reset password error: {e}")
+        return err(f'Gagal reset password: {str(e)}', 500)
 
 @app.route('/api/stream/<camera_id>')
 def video_stream(camera_id):
@@ -70,15 +442,65 @@ def video_stream(camera_id):
 
 @app.route('/')
 def index():
-    return send_file('dashboard.html')
+    # Check authentication via cookie or header
+    token = get_session_token()
+    
+    if not token:
+        return redirect('/login')
+    
+    # Validate session
+    validation = auth.validate_session(token)
+    
+    if not validation['valid']:
+        # Clear invalid cookie
+        response = redirect('/login')
+        response.set_cookie('session_token', '', expires=0)
+        return response
+    
+    # Check role and serve appropriate page
+    user = validation['user']
+    if user['role'] in ['admin', 'timdis']:
+        return send_file('dashboard.html')
+    else:
+        return send_file('mahasiswa.html')
 
 @app.route('/mahasiswa')
 def mahasiswa_portal():
+    # Check authentication
+    token = get_session_token()
+    
+    if not token:
+        return redirect('/login')
+    
+    validation = auth.validate_session(token)
+    
+    if not validation['valid']:
+        response = redirect('/login')
+        response.set_cookie('session_token', '', expires=0)
+        return response
+    
     return send_file('mahasiswa.html')
 
 @app.route('/monitor')
 def monitor():
+    # Check authentication
+    token = get_session_token()
+    
+    if not token:
+        return redirect('/login')
+    
+    validation = auth.validate_session(token)
+    
+    if not validation['valid']:
+        response = redirect('/login')
+        response.set_cookie('session_token', '', expires=0)
+        return response
+    
     return send_file('monitor.html')
+
+@app.route('/test-api')
+def test_api():
+    return send_file('test_api.html')
 
 @app.route('/api/mahasiswa', methods=['GET'])
 def list_mahasiswa():
@@ -94,7 +516,9 @@ def create_mahasiswa():
 
     qr_id = db.add_mahasiswa(
         body['id'], body['name'], body['kelompok'], body['jurusan'],
-        body.get('email', '')
+        body.get('email', ''),
+        body.get('no_telp_mahasiswa', ''),
+        body.get('no_telp_ortu', '')
     )
 
     qr_b64 = QRCodeGenerator.generate(qr_id, body['name'], QR_DIR)
@@ -561,7 +985,8 @@ def submit_izin():
         filename = f"{timestamp}_{mahasiswa_id}_{filename}"
         filepath = app.config['BUKTI_FOLDER'] / filename
         file.save(str(filepath))
-        bukti_path = str(filepath)
+        # Use forward slash for cross-platform compatibility
+        bukti_path = f"data/bukti_izin/{filename}"
         
         # Submit to database
         submission_id = db.submit_izin(
@@ -1013,6 +1438,581 @@ def save_rtsp_settings():
         logger.error(f"Error saving RTSP settings: {e}")
         return err(f'Gagal menyimpan: {str(e)}', 500)
 
+# ═══════════════════════════════════════════════════════════════
+# Enhanced Mahasiswa API Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/mahasiswa/<mhs_id>/statistics', methods=['GET'])
+def get_mahasiswa_statistics(mhs_id):
+    """Get comprehensive statistics for a specific mahasiswa"""
+    try:
+        # Basic attendance stats
+        stats_query = """
+            SELECT 
+                COUNT(CASE WHEN check_in_time IS NOT NULL THEN 1 END) as total_hadir,
+                COUNT(CASE WHEN DATE_FORMAT(date, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m') 
+                           AND check_in_time IS NOT NULL THEN 1 END) as hadir_bulan_ini,
+                COUNT(CASE WHEN check_in_time IS NULL THEN 1 END) as tidak_hadir,
+                AVG(CASE WHEN check_in_time IS NOT NULL AND check_out_time IS NOT NULL 
+                         THEN TIMESTAMPDIFF(MINUTE, 
+                              CONCAT(date, ' ', check_in_time), 
+                              CONCAT(date, ' ', check_out_time)) END) as avg_duration_minutes
+            FROM attendance 
+            WHERE mahasiswa_id = %s AND date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+        """
+        
+        stats = db._execute(stats_query, (mhs_id,), fetch_one=True)
+        
+        # Izin/Sakit count
+        izin_query = """
+            SELECT COUNT(*) as total_izin 
+            FROM izin_submissions 
+            WHERE mahasiswa_id = %s AND status = 'approved'
+        """
+        izin_stats = db._execute(izin_query, (mhs_id,), fetch_one=True)
+        
+        # Calculate percentage
+        total_days = stats['total_hadir'] + stats['tidak_hadir']
+        percentage = round((stats['total_hadir'] / total_days * 100) if total_days > 0 else 0, 1)
+        
+        # Format average duration
+        avg_minutes = stats['avg_duration_minutes'] or 0
+        avg_hours = int(avg_minutes // 60)
+        avg_mins = int(avg_minutes % 60)
+        avg_duration_str = f"{avg_hours}j {avg_mins}m"
+        
+        # Calculate longest streak (simplified)
+        streak_query = """
+            SELECT MAX(streak) as longest_streak FROM (
+                SELECT COUNT(*) as streak
+                FROM attendance a1
+                WHERE mahasiswa_id = %s AND check_in_time IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM attendance a2 
+                    WHERE a2.mahasiswa_id = a1.mahasiswa_id 
+                    AND a2.date = DATE_ADD(a1.date, INTERVAL 1 DAY)
+                    AND a2.check_in_time IS NULL
+                )
+                GROUP BY DATE_FORMAT(date, '%Y-%m')
+            ) streaks
+        """
+        streak_result = db._execute(streak_query, (mhs_id,), fetch_one=True)
+        longest_streak = streak_result['longest_streak'] or 0
+        
+        # Count late arrivals (after 08:00)
+        late_query = """
+            SELECT COUNT(*) as late_count
+            FROM attendance 
+            WHERE mahasiswa_id = %s AND check_in_time > '08:00:00'
+        """
+        late_result = db._execute(late_query, (mhs_id,), fetch_one=True)
+        
+        result = {
+            'totalHadir': stats['total_hadir'] or 0,
+            'hadirBulanIni': stats['hadir_bulan_ini'] or 0,
+            'tidakHadir': stats['tidak_hadir'] or 0,
+            'totalIzin': izin_stats['total_izin'] or 0,
+            'persentaseKehadiran': percentage,
+            'rataRataDurasi': avg_duration_str,
+            'streakTerpanjang': longest_streak,
+            'terlambat': late_result['late_count'] or 0
+        }
+        
+        return ok(result)
+        
+    except Exception as e:
+        logger.error(f"Error getting mahasiswa statistics: {e}")
+        return err(f'Gagal memuat statistik: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/chart/weekly', methods=['GET'])
+def get_weekly_chart(mhs_id):
+    """Get weekly attendance chart data"""
+    try:
+        query = """
+            SELECT DAYOFWEEK(date) as day_of_week, COUNT(*) as count
+            FROM attendance 
+            WHERE mahasiswa_id = %s 
+            AND check_in_time IS NOT NULL 
+            AND date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+            GROUP BY DAYOFWEEK(date)
+            ORDER BY DAYOFWEEK(date)
+        """
+        
+        rows = db._execute(query, (mhs_id,), fetch_all=True)
+        
+        # Initialize with zeros for all days (1=Sunday, 2=Monday, etc.)
+        attendance = [0] * 7
+        for row in rows:
+            day_index = (row['day_of_week'] + 5) % 7  # Convert to Mon=0, Tue=1, etc.
+            attendance[day_index] = row['count']
+        
+        return ok({'attendance': attendance})
+        
+    except Exception as e:
+        logger.error(f"Error getting weekly chart: {e}")
+        return err(f'Gagal memuat chart: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/chart/monthly', methods=['GET'])
+def get_monthly_chart(mhs_id):
+    """Get monthly attendance chart data"""
+    try:
+        query = """
+            SELECT MONTH(date) as month, COUNT(*) as count
+            FROM attendance 
+            WHERE mahasiswa_id = %s 
+            AND check_in_time IS NOT NULL 
+            AND date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            GROUP BY MONTH(date)
+            ORDER BY MONTH(date)
+        """
+        
+        rows = db._execute(query, (mhs_id,), fetch_all=True)
+        
+        # Initialize with zeros for last 6 months
+        monthly = [0] * 6
+        for row in rows:
+            month_index = (row['month'] - 1) % 6
+            monthly[month_index] = row['count']
+        
+        return ok({'monthly': monthly})
+        
+    except Exception as e:
+        logger.error(f"Error getting monthly chart: {e}")
+        return err(f'Gagal memuat chart bulanan: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/activity', methods=['GET'])
+def get_recent_activity(mhs_id):
+    """Get recent activity for mahasiswa"""
+    try:
+        query = """
+            SELECT 
+                date,
+                check_in_time,
+                check_out_time,
+                'checkin' as type,
+                CONCAT('Check-in pada ', TIME_FORMAT(check_in_time, '%H:%i')) as title,
+                CONCAT('Masuk kantor') as description,
+                CONCAT(date, ' ', check_in_time) as timestamp
+            FROM attendance 
+            WHERE mahasiswa_id = %s AND check_in_time IS NOT NULL
+            
+            UNION ALL
+            
+            SELECT 
+                date,
+                check_in_time,
+                check_out_time,
+                'checkout' as type,
+                CONCAT('Check-out pada ', TIME_FORMAT(check_out_time, '%H:%i')) as title,
+                CONCAT('Keluar kantor') as description,
+                CONCAT(date, ' ', check_out_time) as timestamp
+            FROM attendance 
+            WHERE mahasiswa_id = %s AND check_out_time IS NOT NULL
+            
+            ORDER BY timestamp DESC
+            LIMIT 10
+        """
+        
+        activities = db._execute(query, (mhs_id, mhs_id), fetch_all=True)
+        return ok(activities or [])
+        
+    except Exception as e:
+        logger.error(f"Error getting recent activity: {e}")
+        return err(f'Gagal memuat aktivitas: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/riwayat', methods=['GET'])
+def get_mahasiswa_riwayat():
+    """Get filtered attendance history for mahasiswa"""
+    try:
+        mhs_id = request.args.get('mahasiswa_id')
+        if not mhs_id:
+            return err('mahasiswa_id diperlukan')
+        
+        hari = request.args.get('hari')  # 0-6 (Sunday-Saturday)
+        bulan = request.args.get('bulan')  # 01-12
+        tahun = request.args.get('tahun')  # YYYY
+        status = request.args.get('status')  # present, izin, sakit
+        
+        query = """
+            SELECT 
+                a.date,
+                a.check_in_time,
+                a.check_out_time,
+                CASE 
+                    WHEN a.check_in_time IS NOT NULL THEN 'present'
+                    WHEN i.status = 'approved' AND i.type = 'izin' THEN 'izin'
+                    WHEN i.status = 'approved' AND i.type = 'sakit' THEN 'sakit'
+                    ELSE 'absent'
+                END as status
+            FROM attendance a
+            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
+            WHERE a.mahasiswa_id = %s
+        """
+        params = [mhs_id]
+        
+        if hari:
+            query += " AND DAYOFWEEK(a.date) = %s"
+            params.append(int(hari) + 1)  # Convert 0-6 to 1-7
+            
+        if bulan:
+            query += " AND MONTH(a.date) = %s"
+            params.append(int(bulan))
+            
+        if tahun:
+            query += " AND YEAR(a.date) = %s"
+            params.append(int(tahun))
+        
+        query += " ORDER BY a.date DESC LIMIT 100"
+        
+        rows = db._execute(query, tuple(params), fetch_all=True)
+        
+        # Filter by status if specified
+        if status and rows:
+            rows = [row for row in rows if row['status'] == status]
+        
+        return ok(rows or [])
+        
+    except Exception as e:
+        logger.error(f"Error getting riwayat: {e}")
+        return err(f'Gagal memuat riwayat: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/riwayat/export', methods=['GET'])
+def export_riwayat_csv():
+    """Export attendance history to CSV"""
+    try:
+        mhs_id = request.args.get('mahasiswa_id')
+        if not mhs_id:
+            return err('mahasiswa_id diperlukan')
+        
+        # Get mahasiswa info
+        mhs = db._execute("SELECT name FROM mahasiswa WHERE id = %s", (mhs_id,), fetch_one=True)
+        if not mhs:
+            return err('Mahasiswa tidak ditemukan')
+        
+        # Get filtered data (reuse the same logic as riwayat endpoint)
+        hari = request.args.get('hari')
+        bulan = request.args.get('bulan')
+        tahun = request.args.get('tahun')
+        status = request.args.get('status')
+        
+        query = """
+            SELECT 
+                a.date,
+                a.check_in_time,
+                a.check_out_time,
+                CASE 
+                    WHEN a.check_in_time IS NOT NULL THEN 'Hadir'
+                    WHEN i.status = 'approved' AND i.type = 'izin' THEN 'Izin'
+                    WHEN i.status = 'approved' AND i.type = 'sakit' THEN 'Sakit'
+                    ELSE 'Tidak Hadir'
+                END as status
+            FROM attendance a
+            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
+            WHERE a.mahasiswa_id = %s
+        """
+        params = [mhs_id]
+        
+        if hari:
+            query += " AND DAYOFWEEK(a.date) = %s"
+            params.append(int(hari) + 1)
+        if bulan:
+            query += " AND MONTH(a.date) = %s"
+            params.append(int(bulan))
+        if tahun:
+            query += " AND YEAR(a.date) = %s"
+            params.append(int(tahun))
+        
+        query += " ORDER BY a.date DESC"
+        
+        rows = db._execute(query, tuple(params), fetch_all=True)
+        
+        if status and rows:
+            status_map = {'present': 'Hadir', 'izin': 'Izin', 'sakit': 'Sakit', 'absent': 'Tidak Hadir'}
+            target_status = status_map.get(status, status)
+            rows = [row for row in rows if row['status'] == target_status]
+        
+        # Generate CSV
+        import io
+        import csv
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header
+        writer.writerow(['Tanggal', 'Hari', 'Jam Masuk', 'Jam Keluar', 'Status', 'Durasi'])
+        
+        # Data
+        for row in rows:
+            date_obj = row['date']
+            hari_nama = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][date_obj.weekday()]
+            
+            jam_masuk = row['check_in_time'].strftime('%H:%M') if row['check_in_time'] else '-'
+            jam_keluar = row['check_out_time'].strftime('%H:%M') if row['check_out_time'] else '-'
+            
+            # Calculate duration
+            durasi = '-'
+            if row['check_in_time'] and row['check_out_time']:
+                from datetime import datetime, timedelta
+                start = datetime.combine(date_obj, row['check_in_time'])
+                end = datetime.combine(date_obj, row['check_out_time'])
+                if end < start:
+                    end += timedelta(days=1)
+                diff = end - start
+                hours = diff.seconds // 3600
+                minutes = (diff.seconds % 3600) // 60
+                durasi = f"{hours}j {minutes}m"
+            
+            writer.writerow([
+                date_obj.strftime('%d/%m/%Y'),
+                hari_nama,
+                jam_masuk,
+                jam_keluar,
+                row['status'],
+                durasi
+            ])
+        
+        # Create response
+        output.seek(0)
+        
+        from flask import make_response
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=riwayat_{mhs["name"]}_{mhs_id}.csv'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting CSV: {e}")
+        return err(f'Gagal export CSV: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>', methods=['GET'])
+def get_mahasiswa_detail(mhs_id):
+    """Get detailed mahasiswa information"""
+    try:
+        mhs = db._execute("SELECT * FROM mahasiswa WHERE id = %s", (mhs_id,), fetch_one=True)
+        if not mhs:
+            return err('Mahasiswa tidak ditemukan', 404)
+        return ok(mhs)
+    except Exception as e:
+        logger.error(f"Error getting mahasiswa detail: {e}")
+        return err(f'Gagal memuat detail: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>', methods=['PUT'])
+def update_mahasiswa_profile(mhs_id):
+    """Update mahasiswa profile"""
+    try:
+        body = request.json
+        required = ['name', 'kelompok', 'jurusan']
+        if not all(k in body for k in required):
+            return err('Field wajib: name, kelompok, jurusan')
+        
+        db._execute("""
+            UPDATE mahasiswa 
+            SET name = %s, kelompok = %s, jurusan = %s, email = %s
+            WHERE id = %s
+        """, (body['name'], body['kelompok'], body['jurusan'], body.get('email', ''), mhs_id))
+        
+        return ok(msg='Profil berhasil diperbarui')
+        
+    except Exception as e:
+        logger.error(f"Error updating mahasiswa profile: {e}")
+        return err(f'Gagal memperbarui profil: {str(e)}', 500)
+
+# ═══════════════════════════════════════════════════════════════
+# Excel Upload Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/mahasiswa/excel-template', methods=['GET'])
+def download_excel_template():
+    """Download Excel template for bulk mahasiswa upload"""
+    try:
+        import pandas as pd
+        import io
+        
+        # Create sample data
+        template_data = {
+            'mahasiswa_id': ['MHS001', 'MHS002', 'MHS003'],
+            'name': ['Contoh Nama 1', 'Contoh Nama 2', 'Contoh Nama 3'],
+            'kelompok': ['A', 'B', 'A'],
+            'jurusan': ['Teknik Informatika', 'Sistem Informasi', 'Teknik Komputer'],
+            'email': ['contoh1@student.ac.id', 'contoh2@student.ac.id', 'contoh3@student.ac.id']
+        }
+        
+        df = pd.DataFrame(template_data)
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Mahasiswa', index=False)
+            
+            # Add instructions sheet
+            instructions = pd.DataFrame({
+                'Kolom': ['mahasiswa_id', 'name', 'kelompok', 'jurusan', 'email'],
+                'Deskripsi': [
+                    'ID unik mahasiswa (contoh: MHS001)',
+                    'Nama lengkap mahasiswa',
+                    'Kelompok/kelas (contoh: A, B, C)',
+                    'Nama jurusan',
+                    'Email mahasiswa (opsional)'
+                ],
+                'Wajib': ['Ya', 'Ya', 'Ya', 'Ya', 'Tidak']
+            })
+            instructions.to_excel(writer, sheet_name='Instruksi', index=False)
+        
+        output.seek(0)
+        
+        return send_file(
+            io.BytesIO(output.read()),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='template_mahasiswa.xlsx'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating Excel template: {e}")
+        return err(f'Gagal membuat template: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/excel-preview', methods=['POST'])
+def preview_excel_data():
+    """Preview Excel data before upload"""
+    try:
+        if 'excel_file' not in request.files:
+            return err('File Excel tidak ditemukan')
+        
+        file = request.files['excel_file']
+        if file.filename == '':
+            return err('Tidak ada file yang dipilih')
+        
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return err('Format file harus Excel (.xlsx atau .xls)')
+        
+        import pandas as pd
+        
+        # Read Excel file
+        df = pd.read_excel(file)
+        
+        # Validate required columns
+        required_cols = ['mahasiswa_id', 'name', 'kelompok', 'jurusan']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return err(f'Kolom yang hilang: {", ".join(missing_cols)}')
+        
+        # Get existing mahasiswa IDs
+        existing_ids = set()
+        existing_rows = db._execute("SELECT id FROM mahasiswa", fetch_all=True)
+        if existing_rows:
+            existing_ids = {row['id'] for row in existing_rows}
+        
+        # Process each row
+        preview_rows = []
+        for index, row in df.iterrows():
+            row_data = {
+                'mahasiswa_id': str(row['mahasiswa_id']).strip() if pd.notna(row['mahasiswa_id']) else '',
+                'name': str(row['name']).strip() if pd.notna(row['name']) else '',
+                'kelompok': str(row['kelompok']).strip() if pd.notna(row['kelompok']) else '',
+                'jurusan': str(row['jurusan']).strip() if pd.notna(row['jurusan']) else '',
+                'email': str(row['email']).strip() if pd.notna(row.get('email', '')) else '',
+                'errors': [],
+                'is_duplicate': False
+            }
+            
+            # Validation
+            if not row_data['mahasiswa_id']:
+                row_data['errors'].append('ID mahasiswa kosong')
+            elif row_data['mahasiswa_id'] in existing_ids:
+                row_data['is_duplicate'] = True
+            
+            if not row_data['name']:
+                row_data['errors'].append('Nama kosong')
+            
+            if not row_data['kelompok']:
+                row_data['errors'].append('Kelompok kosong')
+            
+            if not row_data['jurusan']:
+                row_data['errors'].append('Jurusan kosong')
+            
+            # Email validation (optional)
+            if row_data['email'] and '@' not in row_data['email']:
+                row_data['errors'].append('Format email tidak valid')
+            
+            preview_rows.append(row_data)
+        
+        return ok({'rows': preview_rows})
+        
+    except Exception as e:
+        logger.error(f"Error previewing Excel: {e}")
+        return err(f'Gagal preview Excel: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/excel-upload', methods=['POST'])
+def upload_excel_mahasiswa():
+    """Upload mahasiswa data from Excel file"""
+    try:
+        if 'excel_file' not in request.files:
+            return err('File Excel tidak ditemukan')
+        
+        file = request.files['excel_file']
+        if file.filename == '':
+            return err('Tidak ada file yang dipilih')
+        
+        import pandas as pd
+        
+        # Read and validate Excel file (reuse preview logic)
+        df = pd.read_excel(file)
+        
+        required_cols = ['mahasiswa_id', 'name', 'kelompok', 'jurusan']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return err(f'Kolom yang hilang: {", ".join(missing_cols)}')
+        
+        # Get existing IDs
+        existing_ids = set()
+        existing_rows = db._execute("SELECT id FROM mahasiswa", fetch_all=True)
+        if existing_rows:
+            existing_ids = {row['id'] for row in existing_rows}
+        
+        # Process and insert valid rows
+        inserted_count = 0
+        errors = []
+        
+        for index, row in df.iterrows():
+            try:
+                mhs_id = str(row['mahasiswa_id']).strip()
+                name = str(row['name']).strip()
+                kelompok = str(row['kelompok']).strip()
+                jurusan = str(row['jurusan']).strip()
+                email = str(row.get('email', '')).strip()
+                
+                # Skip if required fields are empty or duplicate
+                if not all([mhs_id, name, kelompok, jurusan]) or mhs_id in existing_ids:
+                    continue
+                
+                # Insert mahasiswa
+                qr_id = db.add_mahasiswa(mhs_id, name, kelompok, jurusan, email)
+                
+                # Generate QR code
+                QRCodeGenerator.generate(qr_id, name, QR_DIR)
+                
+                inserted_count += 1
+                existing_ids.add(mhs_id)  # Prevent duplicates within the same file
+                
+            except Exception as e:
+                errors.append(f'Baris {index + 2}: {str(e)}')
+                continue
+        
+        result = {
+            'inserted': inserted_count,
+            'errors': errors
+        }
+        
+        if inserted_count > 0:
+            return ok(result, f'Berhasil menambahkan {inserted_count} mahasiswa')
+        else:
+            return err('Tidak ada data valid yang dapat diproses', 400)
+        
+    except Exception as e:
+        logger.error(f"Error uploading Excel: {e}")
+        return err(f'Gagal upload Excel: {str(e)}', 500)
+
 
 if __name__ == '__main__':
     # Sample data mahasiswa
@@ -1039,3 +2039,410 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, pemusnah_mutlak)
     app.run(debug=True, port=5000, host='0.0.0.0', use_reloader=False)
+# ═══════════════════════════════════════════════════════════════
+# Izin/Sakit Submission Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/mahasiswa/<mhs_id>/izin-history', methods=['GET'])
+def get_mahasiswa_izin_history(mhs_id):
+    """Get izin/sakit history for specific mahasiswa"""
+    try:
+        history = db.get_mahasiswa_izin_submissions(mhs_id)
+        return ok(history or [])
+    except Exception as e:
+        logger.error(f"Error getting izin history: {e}")
+        return err(f'Gagal memuat riwayat izin: {str(e)}', 500)
+
+@app.route('/api/izin-submissions/<submission_id>', methods=['GET'])
+def get_izin_submission_detail(submission_id):
+    """Get detailed izin submission"""
+    try:
+        query = """
+            SELECT i.*, m.name as mahasiswa_name, m.kelompok, m.jurusan
+            FROM izin_submissions i
+            JOIN mahasiswa m ON i.mahasiswa_id = m.id
+            WHERE i.id = %s
+        """
+        submission = db._execute(query, (submission_id,), fetch_one=True)
+        
+        if not submission:
+            return err('Pengajuan tidak ditemukan', 404)
+        
+        return ok(submission)
+    except Exception as e:
+        logger.error(f"Error getting izin detail: {e}")
+        return err(f'Gagal memuat detail: {str(e)}', 500)
+
+# ═══════════════════════════════════════════════════════════════
+# Kehadiran Manual Submission Endpoints  
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/kehadiran-submissions', methods=['POST'])
+def submit_kehadiran_manual():
+    """Submit manual attendance request"""
+    try:
+        # Get form data
+        mahasiswa_id = request.form.get('mahasiswa_id')
+        date = request.form.get('date')
+        check_in_time = request.form.get('check_in_time')
+        check_out_time = request.form.get('check_out_time')
+        keterangan = request.form.get('keterangan')
+        
+        # Validate required fields
+        if not all([mahasiswa_id, date, check_in_time, check_out_time, keterangan]):
+            return err('Semua field wajib diisi')
+        
+        # Validate mahasiswa exists
+        mhs = db._execute("SELECT * FROM mahasiswa WHERE id = %s", (mahasiswa_id,), fetch_one=True)
+        if not mhs:
+            return err('Mahasiswa tidak ditemukan')
+        
+        # Handle file upload
+        bukti_path = None
+        if 'bukti' in request.files:
+            file = request.files['bukti']
+            if file and file.filename:
+                if not allowed_bukti_file(file.filename):
+                    return err('Format file tidak didukung. Gunakan JPG, PNG, atau PDF')
+                
+                # Save file
+                filename = secure_filename(f"{mahasiswa_id}_{date}_{int(time.time())}_{file.filename}")
+                file_path = BUKTI_FOLDER / filename
+                file.save(file_path)
+                # Use forward slash for cross-platform compatibility
+                bukti_path = f"data/bukti_izin/{filename}"
+        
+        # Insert kehadiran submission
+        query = """
+            INSERT INTO kehadiran_submissions 
+            (mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path, status, submitted_at)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', NOW())
+        """
+        
+        submission_id = db._execute(query, (
+            mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path
+        ))
+        
+        return ok({'submission_id': submission_id}, 'Pengajuan kehadiran berhasil dikirim')
+        
+    except Exception as e:
+        logger.error(f"Error submitting kehadiran: {e}")
+        return err(f'Gagal mengirim pengajuan: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/kehadiran-history', methods=['GET'])
+def get_mahasiswa_kehadiran_history(mhs_id):
+    """Get kehadiran submission history for specific mahasiswa"""
+    try:
+        query = """
+            SELECT k.*, m.name as mahasiswa_name, m.kelompok, m.jurusan
+            FROM kehadiran_submissions k
+            JOIN mahasiswa m ON k.mahasiswa_id = m.id
+            WHERE k.mahasiswa_id = %s
+            ORDER BY k.submitted_at DESC
+        """
+        
+        history = db._execute(query, (mhs_id,), fetch_all=True)
+        return ok(history or [])
+        
+    except Exception as e:
+        logger.error(f"Error getting kehadiran history: {e}")
+        return err(f'Gagal memuat riwayat kehadiran: {str(e)}', 500)
+
+# ═══════════════════════════════════════════════════════════════
+# Sertifikat Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/mahasiswa/<mhs_id>/sertifikat/preview', methods=['POST'])
+def preview_sertifikat_stats(mhs_id):
+    """Preview statistics for certificate generation"""
+    try:
+        body = request.json
+        periode_type = body.get('type')
+        
+        # Build date filter based on periode type
+        date_filter = ""
+        params = [mhs_id]
+        
+        if periode_type == 'monthly':
+            month = body.get('month')
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) = %s"
+            params.extend([year, month])
+            
+        elif periode_type == 'semester':
+            semester = body.get('semester')
+            year = body.get('year')
+            if semester == 'ganjil':
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (9,10,11,12,1)"
+                params.append(year)
+            else:  # genap
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (2,3,4,5,6)"
+                params.append(year)
+                
+        elif periode_type == 'yearly':
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s"
+            params.append(year)
+            
+        elif periode_type == 'custom':
+            start_date = body.get('startDate')
+            end_date = body.get('endDate')
+            date_filter = "AND a.date BETWEEN %s AND %s"
+            params.extend([start_date, end_date])
+        
+        # Get statistics
+        query = f"""
+            SELECT 
+                COUNT(CASE WHEN a.check_in_time IS NOT NULL THEN 1 END) as total_hadir,
+                COUNT(*) as total_hari,
+                COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as total_izin
+            FROM attendance a
+            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
+            WHERE a.mahasiswa_id = %s {date_filter}
+        """
+        
+        stats = db._execute(query, tuple(params), fetch_one=True)
+        
+        # Calculate percentage
+        total_hari = stats['total_hari'] or 1
+        persentase = round((stats['total_hadir'] / total_hari) * 100, 1)
+        
+        result = {
+            'totalHadir': stats['total_hadir'] or 0,
+            'totalHari': total_hari,
+            'totalIzin': stats['total_izin'] or 0,
+            'persentase': persentase
+        }
+        
+        return ok(result)
+        
+    except Exception as e:
+        logger.error(f"Error previewing sertifikat: {e}")
+        return err(f'Gagal preview sertifikat: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/sertifikat/generate', methods=['POST'])
+def generate_sertifikat_pdf(mhs_id):
+    """Generate certificate PDF"""
+    try:
+        body = request.json
+        template = body.get('template', 'formal')
+        
+        # Get mahasiswa info
+        mhs = db._execute("SELECT * FROM mahasiswa WHERE id = %s", (mhs_id,), fetch_one=True)
+        if not mhs:
+            return err('Mahasiswa tidak ditemukan', 404)
+        
+        # Get statistics (reuse preview logic)
+        periode_type = body.get('type')
+        date_filter = ""
+        params = [mhs_id]
+        
+        if periode_type == 'monthly':
+            month = body.get('month')
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) = %s"
+            params.extend([year, month])
+        elif periode_type == 'semester':
+            semester = body.get('semester')
+            year = body.get('year')
+            if semester == 'ganjil':
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (9,10,11,12,1)"
+                params.append(year)
+            else:
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (2,3,4,5,6)"
+                params.append(year)
+        elif periode_type == 'yearly':
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s"
+            params.append(year)
+        elif periode_type == 'custom':
+            start_date = body.get('startDate')
+            end_date = body.get('endDate')
+            date_filter = "AND a.date BETWEEN %s AND %s"
+            params.extend([start_date, end_date])
+        
+        query = f"""
+            SELECT 
+                COUNT(CASE WHEN a.check_in_time IS NOT NULL THEN 1 END) as total_hadir,
+                COUNT(*) as total_hari,
+                COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as total_izin
+            FROM attendance a
+            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
+            WHERE a.mahasiswa_id = %s {date_filter}
+        """
+        
+        stats = db._execute(query, tuple(params), fetch_one=True)
+        persentase = round((stats['total_hadir'] / (stats['total_hari'] or 1)) * 100, 1)
+        
+        # Generate PDF certificate
+        pdf_content = generate_certificate_pdf(mhs, stats, body, template)
+        
+        # Save to history
+        history_query = """
+            INSERT INTO sertifikat_history 
+            (mahasiswa_id, periode, template, total_hadir, persentase, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """
+        
+        db._execute(history_query, (
+            mhs_id, 
+            json.dumps(body), 
+            template, 
+            stats['total_hadir'], 
+            persentase
+        ))
+        
+        # Return PDF
+        from flask import make_response
+        response = make_response(pdf_content)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=sertifikat_{mhs["name"]}_{mhs_id}.pdf'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating sertifikat: {e}")
+        return err(f'Gagal generate sertifikat: {str(e)}', 500)
+
+def generate_certificate_pdf(mahasiswa, stats, periode_info, template):
+    """Generate PDF certificate content"""
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import inch
+        from reportlab.lib.colors import HexColor
+        import io
+        
+        buffer = io.BytesIO()
+        
+        # Use landscape orientation for certificate
+        p = canvas.Canvas(buffer, pagesize=landscape(A4))
+        width, height = landscape(A4)
+        
+        # Colors based on template
+        if template == 'formal':
+            primary_color = HexColor('#2D5BFF')
+            secondary_color = HexColor('#6B7A90')
+        elif template == 'modern':
+            primary_color = HexColor('#06D6A0')
+            secondary_color = HexColor('#2D5BFF')
+        else:  # classic
+            primary_color = HexColor('#8B4513')
+            secondary_color = HexColor('#DAA520')
+        
+        # Header
+        p.setFillColor(primary_color)
+        p.setFont("Helvetica-Bold", 24)
+        p.drawCentredText(width/2, height - 80, "SERTIFIKAT KEHADIRAN")
+        
+        # Subtitle
+        p.setFillColor(secondary_color)
+        p.setFont("Helvetica", 14)
+        p.drawCentredText(width/2, height - 110, "Sistem Absensi Digital")
+        
+        # Main content
+        p.setFillColor(HexColor('#000000'))
+        p.setFont("Helvetica", 12)
+        
+        y_pos = height - 180
+        
+        # Certificate text
+        p.drawCentredText(width/2, y_pos, "Diberikan kepada:")
+        
+        y_pos -= 40
+        p.setFont("Helvetica-Bold", 20)
+        p.drawCentredText(width/2, y_pos, mahasiswa['name'])
+        
+        y_pos -= 30
+        p.setFont("Helvetica", 12)
+        p.drawCentredText(width/2, y_pos, f"ID: {mahasiswa['id']} | Kelompok: {mahasiswa['kelompok']} | {mahasiswa['jurusan']}")
+        
+        y_pos -= 60
+        p.drawCentredText(width/2, y_pos, "Atas partisipasi dan kehadiran yang baik dengan pencapaian:")
+        
+        # Statistics box
+        y_pos -= 60
+        box_width = 400
+        box_height = 120
+        box_x = (width - box_width) / 2
+        box_y = y_pos - box_height
+        
+        p.setStrokeColor(primary_color)
+        p.setLineWidth(2)
+        p.rect(box_x, box_y, box_width, box_height)
+        
+        # Statistics content
+        p.setFont("Helvetica-Bold", 14)
+        stat_y = box_y + box_height - 30
+        
+        p.drawCentredText(width/2, stat_y, f"Total Kehadiran: {stats['total_hadir']} dari {stats['total_hari']} hari")
+        stat_y -= 25
+        p.drawCentredText(width/2, stat_y, f"Persentase Kehadiran: {round((stats['total_hadir'] / (stats['total_hari'] or 1)) * 100, 1)}%")
+        stat_y -= 25
+        p.drawCentredText(width/2, stat_y, f"Izin/Sakit: {stats['total_izin']} hari")
+        
+        # Period info
+        y_pos = box_y - 40
+        p.setFont("Helvetica", 10)
+        periode_text = format_periode_text(periode_info)
+        p.drawCentredText(width/2, y_pos, f"Periode: {periode_text}")
+        
+        # Footer
+        y_pos -= 60
+        p.setFont("Helvetica", 10)
+        p.drawCentredText(width/2, y_pos, f"Diterbitkan pada: {datetime.now().strftime('%d %B %Y')}")
+        
+        y_pos -= 20
+        p.drawCentredText(width/2, y_pos, "Sistem Absensi Digital - SIABSEN v2.4")
+        
+        p.showPage()
+        p.save()
+        
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF: {e}")
+        raise
+
+def format_periode_text(periode_info):
+    """Format periode information for display"""
+    periode_type = periode_info.get('type')
+    
+    if periode_type == 'monthly':
+        month_names = {
+            '01': 'Januari', '02': 'Februari', '03': 'Maret', '04': 'April',
+            '05': 'Mei', '06': 'Juni', '07': 'Juli', '08': 'Agustus',
+            '09': 'September', '10': 'Oktober', '11': 'November', '12': 'Desember'
+        }
+        month_name = month_names.get(periode_info.get('month'), periode_info.get('month'))
+        return f"{month_name} {periode_info.get('year')}"
+        
+    elif periode_type == 'semester':
+        semester = 'Ganjil' if periode_info.get('semester') == 'ganjil' else 'Genap'
+        return f"Semester {semester} {periode_info.get('year')}"
+        
+    elif periode_type == 'yearly':
+        return f"Tahun {periode_info.get('year')}"
+        
+    elif periode_type == 'custom':
+        return f"{periode_info.get('startDate')} s/d {periode_info.get('endDate')}"
+    
+    return "Periode Tidak Diketahui"
+
+@app.route('/api/mahasiswa/<mhs_id>/sertifikat/history', methods=['GET'])
+def get_sertifikat_history(mhs_id):
+    """Get certificate generation history"""
+    try:
+        query = """
+            SELECT * FROM sertifikat_history 
+            WHERE mahasiswa_id = %s 
+            ORDER BY created_at DESC
+        """
+        
+        history = db._execute(query, (mhs_id,), fetch_all=True)
+        return ok(history or [])
+        
+    except Exception as e:
+        logger.error(f"Error getting sertifikat history: {e}")
+        return err(f'Gagal memuat riwayat sertifikat: {str(e)}', 500)

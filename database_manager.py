@@ -58,6 +58,8 @@ class DatabaseManager:
                 kelompok VARCHAR(100) NOT NULL,
                 jurusan VARCHAR(100) NOT NULL,
                 email VARCHAR(255),
+                no_telp_mahasiswa VARCHAR(20),
+                no_telp_ortu VARCHAR(20),
                 qr_code_id VARCHAR(100) UNIQUE NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 is_active TINYINT(1) DEFAULT 1,
@@ -65,6 +67,17 @@ class DatabaseManager:
                 INDEX idx_active (is_active)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
+        
+        # Add missing columns to mahasiswa table if they don't exist
+        try:
+            cursor.execute("ALTER TABLE mahasiswa ADD COLUMN no_telp_mahasiswa VARCHAR(20)")
+        except mysql.connector.Error:
+            pass  # Column already exists
+            
+        try:
+            cursor.execute("ALTER TABLE mahasiswa ADD COLUMN no_telp_ortu VARCHAR(20)")
+        except mysql.connector.Error:
+            pass  # Column already exists
         
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS attendance (
@@ -84,6 +97,17 @@ class DatabaseManager:
                 INDEX idx_checkin (check_in)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
+        
+        # Add missing columns to attendance table if they don't exist
+        try:
+            cursor.execute("ALTER TABLE attendance ADD COLUMN check_in_time TIME")
+        except mysql.connector.Error:
+            pass  # Column already exists
+            
+        try:
+            cursor.execute("ALTER TABLE attendance ADD COLUMN check_out_time TIME")
+        except mysql.connector.Error:
+            pass  # Column already exists
         
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS camera_streams (
@@ -157,24 +181,40 @@ class DatabaseManager:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """)
         
+        # Tabel untuk riwayat sertifikat
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sertifikat_history (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                mahasiswa_id VARCHAR(50) NOT NULL,
+                periode TEXT NOT NULL,
+                template VARCHAR(50) NOT NULL,
+                total_hadir INT NOT NULL,
+                persentase DECIMAL(5,2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_mahasiswa (mahasiswa_id),
+                INDEX idx_created (created_at),
+                FOREIGN KEY (mahasiswa_id) REFERENCES mahasiswa(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
         logger.info("Database MySQL diinisialisasi.")
 
-    def add_mahasiswa(self, mhs_id, name, kelompok, jurusan, email=''):
+    def add_mahasiswa(self, mhs_id, name, kelompok, jurusan, email='', no_telp_mahasiswa='', no_telp_ortu=''):
         """Tambah mahasiswa baru"""
         qr_code_id = f"{mhs_id}"
         
         query = """
-            INSERT INTO mahasiswa (id, name, kelompok, jurusan, email, qr_code_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO mahasiswa (id, name, kelompok, jurusan, email, no_telp_mahasiswa, no_telp_ortu, qr_code_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
             name=VALUES(name), kelompok=VALUES(kelompok), jurusan=VALUES(jurusan),
-            email=VALUES(email)
+            email=VALUES(email), no_telp_mahasiswa=VALUES(no_telp_mahasiswa), no_telp_ortu=VALUES(no_telp_ortu)
         """
         
-        self._execute(query, (mhs_id, name, kelompok, jurusan, email, qr_code_id))
+        self._execute(query, (mhs_id, name, kelompok, jurusan, email, no_telp_mahasiswa, no_telp_ortu, qr_code_id))
         logger.info(f"Mahasiswa ditambahkan: {name} ({mhs_id})")
         return qr_code_id
 
