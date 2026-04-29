@@ -56,6 +56,65 @@ let cameraData = [];
 let currentPage = 'dashboard';
 let currentQRBase64 = '';
 let editingCameraId = null;
+let currentUser = null;
+let userPermissions = null;
+
+// ─── Load User Permissions ─────────────────────────────────────────────────
+async function loadUserPermissions() {
+  try {
+    const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
+    const res = await fetch(API + '/auth/me', {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'
+    });
+    
+    const result = await res.json();
+    if (result.success) {
+      currentUser = result.data;
+      userPermissions = result.data.permissions;
+      
+      // Apply UI restrictions based on permissions
+      applyRoleBasedUI();
+      
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('Error loading user permissions:', e);
+    return false;
+  }
+}
+
+// ─── Apply Role-Based UI Restrictions ──────────────────────────────────────
+function applyRoleBasedUI() {
+  if (!userPermissions) return;
+  
+  // Hide User Management menu for non-admin
+  if (!userPermissions.can_manage_users) {
+    const userMgmtMenu = document.querySelector('.nav-item[onclick*="users"]');
+    if (userMgmtMenu) userMgmtMenu.style.display = 'none';
+  }
+  
+  // Hide Settings menu and "Sistem" section for non-admin
+  if (!userPermissions.can_edit_settings) {
+    // Hide the settings menu item
+    const settingsMenu = document.querySelector('.nav-item[onclick*="settings"]');
+    if (settingsMenu) {
+      settingsMenu.style.display = 'none';
+      
+      // Hide the "Sistem" section header (previous sibling)
+      const sistemSection = settingsMenu.previousElementSibling;
+      if (sistemSection && sistemSection.classList.contains('nav-section')) {
+        sistemSection.style.display = 'none';
+      }
+    }
+  }
+  
+  console.log('User permissions loaded:', userPermissions);
+}
 
 // ─── Navigation ────────────────────────────────────────────────────────────
 function showPage(page) {
@@ -130,6 +189,11 @@ function showPage(page) {
 
     // ─── Dashboard ──────────────────────────────────────────────────────────────
     async function loadDashboard() {
+      // Load user permissions first if not loaded
+      if (!userPermissions) {
+        await loadUserPermissions();
+      }
+      
       const res = await apiFetch('/dashboard');
       if (!res || !res.success) {
         // Demo data mode
@@ -420,10 +484,20 @@ function showPage(page) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Tidak ada mahasiswa ditemukan</td></tr>';
         return;
       }
+      
+      // Check if user can manage mahasiswa (admin only)
+      const canManage = userPermissions?.can_manage_mahasiswa || false;
+      
       tbody.innerHTML = list.map((e, i) => {
         const initials = e.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
         const colors = ['#4f7cff', '#22d3a0', '#f5a623', '#ff6b6b', '#a78bfa'];
         const c = colors[i % colors.length];
+        
+        // Show delete button only for admin
+        const deleteButton = canManage 
+          ? `<button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="removeMahasiswa('${e.id}')"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">delete</span></button>`
+          : '';
+        
         return `<tr>
       <td><div class="mahasiswa-cell">
         <div class="avatar" style="background:${c}22;color:${c}">${initials}</div>
@@ -437,7 +511,7 @@ function showPage(page) {
       <td><span style="font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--bg3);padding:2px 6px;border-radius:4px">${e.qr_code_id || '—'}</span></td>
       <td>
         <button class="btn btn-ghost btn-sm" onclick="showQR('${e.id}')"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">qr_code</span></button>
-        <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="removeMahasiswa('${e.id}')"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">delete</span></button>
+        ${deleteButton}
       </td>
     </tr>`;
       }).join('');
@@ -1074,11 +1148,10 @@ async function removeMahasiswa(id) {
       tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
 
       try {
-        const url = API + '/izin/list' + (status ? `?status=${status}` : '');
-        const res = await fetch(url);
-        const result = await res.json();
+        const url = '/izin/list' + (status ? `?status=${status}` : '');
+        const result = await apiFetch(url);
 
-        if (!result.success) {
+        if (!result || !result.success) {
           tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
           return;
         }
@@ -1105,27 +1178,32 @@ async function removeMahasiswa(id) {
         renderIzinSubmissions(submissions);
 
       } catch (e) {
+        console.error('Error loading izin submissions:', e);
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
       }
     }
 
     async function approveIzin(submissionId) {
-      const verifiedBy = 'Timdis';
+      const verifiedBy = currentUser?.username || 'Timdis';
       try {
-        const res = await fetch(API + '/izin/verify', {
+        const result = await apiFetch('/izin/verify', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ submission_id: submissionId, action: 'approve', verified_by: verifiedBy })
+          body: JSON.stringify({ 
+            submission_id: submissionId, 
+            action: 'approve', 
+            verified_by: verifiedBy 
+          })
         });
-        const result = await res.json();
-        if (result.success) {
+        
+        if (result && result.success) {
           toast('Pengajuan disetujui', 'Status kehadiran mahasiswa telah diperbarui');
           loadIzinSubmissions();
           loadIzinPendingCount();
         } else {
-          toast('Gagal menyetujui', result.message, true);
+          toast('Gagal menyetujui', result?.message || 'Terjadi kesalahan', true);
         }
       } catch (e) {
+        console.error('Error approving izin:', e);
         toast('Gagal', 'Pastikan server berjalan', true);
       }
     }
@@ -1142,27 +1220,29 @@ async function removeMahasiswa(id) {
 
       if (!reason) return toast('Alasan penolakan wajib diisi', '', true);
 
+      const verifiedBy = currentUser?.username || 'Timdis';
+      
       try {
-        const res = await fetch(API + '/izin/verify', {
+        const result = await apiFetch('/izin/verify', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             submission_id: parseInt(submissionId),
             action: 'reject',
-            verified_by: 'Timdis',
+            verified_by: verifiedBy,
             rejection_reason: reason
           })
         });
-        const result = await res.json();
-        if (result.success) {
+        
+        if (result && result.success) {
           closeModal('modal-reject-izin');
           toast('Pengajuan ditolak', 'Mahasiswa akan diberitahu');
           loadIzinSubmissions();
           loadIzinPendingCount();
         } else {
-          toast('Gagal menolak', result.message, true);
+          toast('Gagal menolak', result?.message || 'Terjadi kesalahan', true);
         }
       } catch (e) {
+        console.error('Error rejecting izin:', e);
         toast('Gagal', 'Pastikan server berjalan', true);
       }
     }
@@ -1193,15 +1273,16 @@ async function removeMahasiswa(id) {
 
     async function loadIzinPendingCount() {
       try {
-        const res = await fetch(API + '/izin/list?status=pending');
-        const result = await res.json();
-        if (result.success) {
+        const result = await apiFetch('/izin/list?status=pending');
+        if (result && result.success) {
           const count = result.data.stats.pending;
           const badge = document.getElementById('sidebar-pending-izin');
           badge.textContent = count;
           badge.style.display = count > 0 ? '' : 'none';
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Error loading izin pending count:', e);
+      }
     }
 
     // Load pending count on init
@@ -1216,11 +1297,10 @@ async function removeMahasiswa(id) {
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto"></div></td></tr>';
 
       try {
-        const url = API + '/kehadiran/list' + (status ? `?status=${status}` : '');
-        const res = await fetch(url);
-        const result = await res.json();
+        const url = '/kehadiran/list' + (status ? `?status=${status}` : '');
+        const result = await apiFetch(url);
 
-        if (!result.success) {
+        if (!result || !result.success) {
           tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
           return;
         }
@@ -1247,27 +1327,31 @@ async function removeMahasiswa(id) {
         renderKehadiranSubmissions(submissions);
 
       } catch (e) {
+        console.error('Error loading kehadiran submissions:', e);
         tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--danger);padding:20px">Gagal memuat data</td></tr>';
       }
     }
 
     async function approveKehadiran(submissionId) {
-      const verifiedBy = 'Timdis';
+      const verifiedBy = currentUser?.username || 'Timdis';
       try {
-        const res = await fetch(API + '/kehadiran/verify', {
+        const result = await apiFetch('/kehadiran/verify', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ submission_id: submissionId, action: 'approve', verified_by: verifiedBy })
+          body: JSON.stringify({ 
+            submission_id: submissionId, 
+            action: 'approve', 
+            verified_by: verifiedBy 
+          })
         });
         
-        const result = await res.json();
-        if (result.success) {
+        if (result && result.success) {
           toast('Pengajuan Disetujui', 'Kehadiran manual telah dicatat');
           loadKehadiranSubmissions();
         } else {
-          toast('Gagal', result.message, true);
+          toast('Gagal', result?.message || 'Terjadi kesalahan', true);
         }
       } catch (e) {
+        console.error('Error approving kehadiran:', e);
         toast('Error', e.message, true);
       }
     }
@@ -1290,11 +1374,10 @@ async function removeMahasiswa(id) {
         return;
       }
       
-      const verifiedBy = 'Timdis';
+      const verifiedBy = currentUser?.username || 'Timdis';
       try {
-        const res = await fetch(API + '/kehadiran/verify', {
+        const result = await apiFetch('/kehadiran/verify', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             submission_id: submissionId, 
             action: 'reject', 
@@ -1303,15 +1386,15 @@ async function removeMahasiswa(id) {
           })
         });
         
-        const result = await res.json();
-        if (result.success) {
+        if (result && result.success) {
           closeModal('modal-reject-izin');
           toast('Pengajuan Ditolak', reason);
           loadKehadiranSubmissions();
         } else {
-          toast('Gagal', result.message, true);
+          toast('Gagal', result?.message || 'Terjadi kesalahan', true);
         }
       } catch (e) {
+        console.error('Error rejecting kehadiran:', e);
         toast('Error', e.message, true);
       }
     }
@@ -1323,9 +1406,8 @@ async function removeMahasiswa(id) {
 
     async function loadKehadiranPendingCount() {
       try {
-        const res = await fetch(API + '/kehadiran/list?status=pending');
-        const result = await res.json();
-        if (result.success) {
+        const result = await apiFetch('/kehadiran/list?status=pending');
+        if (result && result.success) {
           const count = result.data.submissions.length;
           const badge = document.getElementById('sidebar-pending-kehadiran');
           badge.textContent = count;
@@ -1359,6 +1441,29 @@ async function removeMahasiswa(id) {
           document.getElementById('setting-frame-height').value = data.rtsp.frame_height || 720;
           document.getElementById('setting-frame-fps').value = data.rtsp.frame_fps || 30;
           document.getElementById('setting-reconnect-delay').value = data.rtsp.reconnect_delay || 5;
+        }
+        
+        // Disable editing for non-admin users
+        if (userPermissions && !userPermissions.can_edit_settings) {
+          // Disable all input fields
+          document.querySelectorAll('#page-settings input').forEach(input => {
+            input.disabled = true;
+          });
+          
+          // Hide save buttons
+          document.querySelectorAll('#page-settings button[onclick*="save"]').forEach(btn => {
+            btn.style.display = 'none';
+          });
+          
+          // Show read-only message
+          const settingsPage = document.getElementById('page-settings');
+          if (!document.getElementById('readonly-notice')) {
+            const notice = document.createElement('div');
+            notice.id = 'readonly-notice';
+            notice.style.cssText = 'background:var(--warning-light);border:1px solid var(--warning);padding:12px 16px;border-radius:8px;margin-bottom:20px;color:var(--warning);font-size:13px;font-weight:600';
+            notice.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:8px">info</span>Anda hanya dapat melihat pengaturan. Hanya Admin yang dapat mengubah pengaturan sistem.';
+            settingsPage.insertBefore(notice, settingsPage.firstChild.nextSibling);
+          }
         }
       } catch (e) {
         console.error('Error loading settings:', e);

@@ -1,4 +1,4 @@
-"""
+﻿"""
 SIABSEN API Server
 REST API untuk sistem absensi dengan QR Code detection
 """
@@ -23,6 +23,7 @@ import time
 import base64
 import threading
 import signal
+from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
 from functools import wraps
 
@@ -35,7 +36,12 @@ import logging
 logger = logging.getLogger('VideoProcessor')
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+CORS(app, 
+     supports_credentials=True,
+     origins=['http://localhost:5000', 'http://127.0.0.1:5000'],
+     allow_headers=['Content-Type', 'Authorization'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+)
 
 # Konfigurasi upload
 UPLOAD_FOLDER = Path('data/uploads')
@@ -51,14 +57,23 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['BUKTI_FOLDER'] = BUKTI_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
+# Add CORS headers to all responses
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
 db, yolo, processor = create_system()
 
 # Initialize Authentication Manager
 auth = AuthManager(db)
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Authentication Middleware & Decorators
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def get_session_token():
     """Extract session token from request headers or cookies"""
@@ -112,6 +127,44 @@ def require_auth(roles=None):
         return decorated_function
     return decorator
 
+# ═══════════════════════════════════════════════════════════════
+# Permission Helper Functions
+# ═══════════════════════════════════════════════════════════════
+
+def can_manage_users(user):
+    """Check if user can manage other users (create, edit, delete)"""
+    return user.get('role') == 'admin'
+
+def can_manage_mahasiswa(user):
+    """Check if user can fully manage mahasiswa data"""
+    return user.get('role') == 'admin'
+
+def can_verify_submissions(user):
+    """Check if user can verify izin/kehadiran submissions"""
+    return user.get('role') in ['admin', 'timdis']
+
+def can_edit_settings(user):
+    """Check if user can edit system settings"""
+    return user.get('role') == 'admin'
+
+def can_view_dashboard(user):
+    """Check if user can view admin dashboard"""
+    return user.get('role') in ['admin', 'timdis']
+
+def get_user_permissions(user):
+    """Get all permissions for a user"""
+    return {
+        'can_manage_users': can_manage_users(user),
+        'can_manage_mahasiswa': can_manage_mahasiswa(user),
+        'can_verify_submissions': can_verify_submissions(user),
+        'can_edit_settings': can_edit_settings(user),
+        'can_view_dashboard': can_view_dashboard(user),
+        'role': user.get('role'),
+        'username': user.get('username')
+    }
+
+# ═══════════════════════════════════════════════════════════════
+
 def optional_auth(f):
     """Decorator untuk endpoints yang bisa diakses dengan atau tanpa auth"""
     @wraps(f)
@@ -143,9 +196,9 @@ def ok(data=None, msg='OK'):
 def err(msg, code=400):
     return jsonify({'success': False, 'message': msg}), code
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Authentication Endpoints
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route('/login')
 def login_page():
@@ -243,6 +296,9 @@ def get_current_user():
     """Get current logged in user info with mahasiswa data if role is mahasiswa"""
     user = request.current_user
     
+    # Get permissions
+    permissions = get_user_permissions(user)
+    
     # If user is mahasiswa, include mahasiswa data
     if user['role'] == 'mahasiswa' and user.get('mahasiswa_id'):
         mahasiswa = db._execute("""
@@ -251,6 +307,9 @@ def get_current_user():
         
         if mahasiswa:
             user['mahasiswa'] = mahasiswa
+    
+    # Add permissions to response
+    user['permissions'] = permissions
     
     return ok(user)
 
@@ -281,9 +340,9 @@ def change_password():
         logger.error(f"Change password error: {e}")
         return err(f'Gagal mengubah password: {str(e)}', 500)
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # User Management Endpoints (Admin only)
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route('/api/users', methods=['GET'])
 @require_auth(roles=['admin'])
@@ -858,16 +917,16 @@ def process_video_file(video_path: str, action: str = 'check_in') -> dict:
                 # Check if already checked in/out today
                 if attendance_result['status'] == 'already_checked_in':
                     status_message = f"Sudah check-in hari ini"
-                    logger.info(f"[VIDEO] ⚠ {mahasiswa['name']} — Sudah check-in sebelumnya")
+                    logger.info(f"[VIDEO] âš  {mahasiswa['name']} â€” Sudah check-in sebelumnya")
                 elif attendance_result['status'] == 'already_checked_out':
                     status_message = f"Sudah check-out hari ini"
-                    logger.info(f"[VIDEO] ⚠ {mahasiswa['name']} — Sudah check-out sebelumnya")
+                    logger.info(f"[VIDEO] âš  {mahasiswa['name']} â€” Sudah check-out sebelumnya")
                 elif attendance_result['status'] == 'not_checked_in':
                     status_message = f"Belum check-in, tidak bisa check-out"
-                    logger.info(f"[VIDEO] ⚠ {mahasiswa['name']} — Belum check-in")
+                    logger.info(f"[VIDEO] âš  {mahasiswa['name']} â€” Belum check-in")
                 else:
                     recorded_mahasiswa.add(mahasiswa_id)
-                    logger.info(f"[VIDEO] ✓ {mahasiswa['name']} — {action_label} | frame #{frame_number} | conf {max_conf:.2%}")
+                    logger.info(f"[VIDEO] âœ“ {mahasiswa['name']} â€” {action_label} | frame #{frame_number} | conf {max_conf:.2%}")
             
             detections.append({
                 'frame_number': frame_number,
@@ -1011,9 +1070,10 @@ def submit_izin():
 
 
 @app.route('/api/izin/list', methods=['GET'])
+@require_auth(roles=['admin', 'timdis'])
 def list_izin():
     """
-    Endpoint untuk Timdis melihat daftar pengajuan.
+    Endpoint untuk Admin/Timdis melihat daftar pengajuan.
     Query params: status (optional) = 'pending', 'approved', 'rejected'
     """
     try:
@@ -1042,9 +1102,10 @@ def list_izin():
 
 
 @app.route('/api/izin/verify', methods=['POST'])
+@require_auth(roles=['admin', 'timdis'])
 def verify_izin():
     """
-    Endpoint untuk Timdis verifikasi pengajuan (approve/reject).
+    Endpoint untuk Admin/Timdis verifikasi pengajuan (approve/reject).
     JSON body: submission_id, action ('approve'/'reject'), verified_by, rejection_reason (optional)
     """
     try:
@@ -1053,6 +1114,10 @@ def verify_izin():
         action = data.get('action')
         verified_by = data.get('verified_by')
         rejection_reason = data.get('rejection_reason', '')
+        
+        # Get current user info for audit
+        current_user = request.current_user
+        verified_by_full = f"{verified_by} ({current_user['role'].upper()})"
         
         if not all([submission_id, action, verified_by]):
             return err('Field submission_id, action, dan verified_by wajib diisi')
@@ -1063,10 +1128,13 @@ def verify_izin():
         if action == 'reject' and not rejection_reason:
             return err('Alasan penolakan wajib diisi untuk action reject')
         
-        result = db.verify_izin(submission_id, action, verified_by, rejection_reason)
+        result = db.verify_izin(submission_id, action, verified_by_full, rejection_reason)
         
         if result['status'] == 'error':
             return err(result['message'])
+        
+        # Log audit trail
+        logger.info(f"Izin {action}d by {current_user['username']} ({current_user['role']}) - Submission ID: {submission_id}")
         
         return ok(result, result['message'])
         
@@ -1114,7 +1182,7 @@ def get_bukti_file(filename):
         return err(f'Gagal mengambil file: {str(e)}', 500)
 
 
-# ─── Kehadiran Manual Endpoints ──────────────────────────────────────────────────
+# â”€â”€â”€ Kehadiran Manual Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.route('/api/kehadiran/submit', methods=['POST'])
 def submit_kehadiran_manual():
     """
@@ -1127,6 +1195,8 @@ def submit_kehadiran_manual():
         check_in_time = request.form.get('check_in_time')
         check_out_time = request.form.get('check_out_time')
         keterangan = request.form.get('keterangan')
+        
+        logger.info(f"[KEHADIRAN] Received submission: mhs={mahasiswa_id}, date={date}, in={check_in_time}, out={check_out_time}")
         
         if not all([mahasiswa_id, date, check_in_time, check_out_time, keterangan]):
             return err('Field wajib: mahasiswa_id, date, check_in_time, check_out_time, keterangan')
@@ -1158,34 +1228,61 @@ def submit_kehadiran_manual():
         file.save(str(filepath))
         bukti_path = f"data/bukti_izin/{filename}"
         
+        logger.info(f"[KEHADIRAN] File saved: {bukti_path}")
+        
         submission_id = db.submit_kehadiran_manual(
             mahasiswa_id, date, check_in_time, check_out_time, keterangan, bukti_path
         )
+        
+        logger.info(f"[KEHADIRAN] Submission created: ID={submission_id}")
         
         return ok({'submission_id': submission_id}, 'Pengajuan kehadiran berhasil disubmit')
         
     except Exception as e:
         logger.error(f"Error submit kehadiran manual: {e}")
+        import traceback
+        traceback.print_exc()
         return err(f'Gagal submit pengajuan: {str(e)}', 500)
 
 
 @app.route('/api/kehadiran/list', methods=['GET'])
+@require_auth(roles=['admin', 'timdis'])
 def list_kehadiran_submissions():
     """
-    Endpoint untuk Timdis melihat semua pengajuan kehadiran manual.
+    Endpoint untuk Admin/Timdis melihat semua pengajuan kehadiran manual.
     """
     try:
         status = request.args.get('status', '')
         submissions = db.get_kehadiran_submissions(status)
         
-        # Convert datetime to ISO format
+        # Convert datetime and timedelta to ISO format/string
         for sub in submissions:
+            # Convert date
             if hasattr(sub.get('date'), 'isoformat'):
                 sub['date'] = sub['date'].isoformat()
+            
+            # Convert datetime fields
             if hasattr(sub.get('created_at'), 'isoformat'):
                 sub['created_at'] = sub['created_at'].isoformat()
             if hasattr(sub.get('verified_at'), 'isoformat') and sub.get('verified_at'):
                 sub['verified_at'] = sub['verified_at'].isoformat()
+            
+            # Convert timedelta fields to string (HH:MM:SS)
+            if sub.get('check_in_time') and hasattr(sub['check_in_time'], 'total_seconds'):
+                # timedelta to HH:MM:SS
+                total_seconds = int(sub['check_in_time'].total_seconds())
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                sub['check_in_time'] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            
+            if sub.get('check_out_time') and hasattr(sub['check_out_time'], 'total_seconds'):
+                # timedelta to HH:MM:SS
+                total_seconds = int(sub['check_out_time'].total_seconds())
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                sub['check_out_time'] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
         # Calculate stats
         all_submissions = db.get_kehadiran_submissions('')
@@ -1203,9 +1300,10 @@ def list_kehadiran_submissions():
 
 
 @app.route('/api/kehadiran/verify', methods=['POST'])
+@require_auth(roles=['admin', 'timdis'])
 def verify_kehadiran_submission():
     """
-    Endpoint untuk Timdis verifikasi pengajuan kehadiran (approve/reject).
+    Endpoint untuk Admin/Timdis verifikasi pengajuan kehadiran (approve/reject).
     """
     try:
         body = request.json
@@ -1213,6 +1311,10 @@ def verify_kehadiran_submission():
         action = body.get('action')  # 'approve' or 'reject'
         verified_by = body.get('verified_by', 'Timdis')
         reject_reason = body.get('reject_reason', '')
+        
+        # Get current user info for audit
+        current_user = request.current_user
+        verified_by_full = f"{verified_by} ({current_user['role'].upper()})"
         
         if not all([submission_id, action]):
             return err('Field wajib: submission_id, action')
@@ -1224,11 +1326,15 @@ def verify_kehadiran_submission():
             return err('Alasan penolakan wajib diisi')
         
         success = db.verify_kehadiran_submission(
-            submission_id, action, verified_by, reject_reason
+            submission_id, action, verified_by_full, reject_reason
         )
         
         if success:
             msg = 'Pengajuan disetujui' if action == 'approve' else 'Pengajuan ditolak'
+            
+            # Log audit trail
+            logger.info(f"Kehadiran {action}d by {current_user['username']} ({current_user['role']}) - Submission ID: {submission_id}")
+            
             return ok(None, msg)
         else:
             return err('Gagal memverifikasi pengajuan')
@@ -1261,7 +1367,7 @@ def get_kehadiran_by_mahasiswa(mahasiswa_id):
         return err(f'Gagal mengambil data: {str(e)}', 500)
 
 
-# ─── Settings Management ─────────────────────────────────────────────────────────
+# â”€â”€â”€ Settings Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 SETTINGS_FILE = Path('data/settings.json')
 
 def load_settings_from_file():
@@ -1438,9 +1544,9 @@ def save_rtsp_settings():
         logger.error(f"Error saving RTSP settings: {e}")
         return err(f'Gagal menyimpan: {str(e)}', 500)
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Enhanced Mahasiswa API Endpoints
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route('/api/mahasiswa/<mhs_id>/statistics', methods=['GET'])
 def get_mahasiswa_statistics(mhs_id):
@@ -1449,14 +1555,12 @@ def get_mahasiswa_statistics(mhs_id):
         # Basic attendance stats
         stats_query = """
             SELECT 
-                COUNT(CASE WHEN check_in_time IS NOT NULL THEN 1 END) as total_hadir,
+                COUNT(CASE WHEN check_in IS NOT NULL THEN 1 END) as total_hadir,
                 COUNT(CASE WHEN DATE_FORMAT(date, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m') 
-                           AND check_in_time IS NOT NULL THEN 1 END) as hadir_bulan_ini,
-                COUNT(CASE WHEN check_in_time IS NULL THEN 1 END) as tidak_hadir,
-                AVG(CASE WHEN check_in_time IS NOT NULL AND check_out_time IS NOT NULL 
-                         THEN TIMESTAMPDIFF(MINUTE, 
-                              CONCAT(date, ' ', check_in_time), 
-                              CONCAT(date, ' ', check_out_time)) END) as avg_duration_minutes
+                           AND check_in IS NOT NULL THEN 1 END) as hadir_bulan_ini,
+                COUNT(CASE WHEN check_in IS NULL THEN 1 END) as tidak_hadir,
+                AVG(CASE WHEN check_in IS NOT NULL AND check_out IS NOT NULL 
+                         THEN TIMESTAMPDIFF(MINUTE, check_in, check_out) END) as avg_duration_minutes
             FROM attendance 
             WHERE mahasiswa_id = %s AND date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
         """
@@ -1486,12 +1590,12 @@ def get_mahasiswa_statistics(mhs_id):
             SELECT MAX(streak) as longest_streak FROM (
                 SELECT COUNT(*) as streak
                 FROM attendance a1
-                WHERE mahasiswa_id = %s AND check_in_time IS NOT NULL
+                WHERE mahasiswa_id = %s AND check_in IS NOT NULL
                 AND NOT EXISTS (
                     SELECT 1 FROM attendance a2 
                     WHERE a2.mahasiswa_id = a1.mahasiswa_id 
                     AND a2.date = DATE_ADD(a1.date, INTERVAL 1 DAY)
-                    AND a2.check_in_time IS NULL
+                    AND a2.check_in IS NULL
                 )
                 GROUP BY DATE_FORMAT(date, '%Y-%m')
             ) streaks
@@ -1503,7 +1607,7 @@ def get_mahasiswa_statistics(mhs_id):
         late_query = """
             SELECT COUNT(*) as late_count
             FROM attendance 
-            WHERE mahasiswa_id = %s AND check_in_time > '08:00:00'
+            WHERE mahasiswa_id = %s AND TIME(check_in) > '08:00:00'
         """
         late_result = db._execute(late_query, (mhs_id,), fetch_one=True)
         
@@ -1522,6 +1626,8 @@ def get_mahasiswa_statistics(mhs_id):
         
     except Exception as e:
         logger.error(f"Error getting mahasiswa statistics: {e}")
+        import traceback
+        traceback.print_exc()
         return err(f'Gagal memuat statistik: {str(e)}', 500)
 
 @app.route('/api/mahasiswa/<mhs_id>/chart/weekly', methods=['GET'])
@@ -1532,7 +1638,7 @@ def get_weekly_chart(mhs_id):
             SELECT DAYOFWEEK(date) as day_of_week, COUNT(*) as count
             FROM attendance 
             WHERE mahasiswa_id = %s 
-            AND check_in_time IS NOT NULL 
+            AND check_in IS NOT NULL 
             AND date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
             GROUP BY DAYOFWEEK(date)
             ORDER BY DAYOFWEEK(date)
@@ -1560,7 +1666,7 @@ def get_monthly_chart(mhs_id):
             SELECT MONTH(date) as month, COUNT(*) as count
             FROM attendance 
             WHERE mahasiswa_id = %s 
-            AND check_in_time IS NOT NULL 
+            AND check_in IS NOT NULL 
             AND date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
             GROUP BY MONTH(date)
             ORDER BY MONTH(date)
@@ -1587,37 +1693,50 @@ def get_recent_activity(mhs_id):
         query = """
             SELECT 
                 date,
-                check_in_time,
-                check_out_time,
+                check_in,
+                check_out,
                 'checkin' as type,
-                CONCAT('Check-in pada ', TIME_FORMAT(check_in_time, '%H:%i')) as title,
+                CONCAT('Check-in pada ', TIME_FORMAT(check_in, '%H:%i')) as title,
                 CONCAT('Masuk kantor') as description,
-                CONCAT(date, ' ', check_in_time) as timestamp
+                check_in as timestamp
             FROM attendance 
-            WHERE mahasiswa_id = %s AND check_in_time IS NOT NULL
+            WHERE mahasiswa_id = %s AND check_in IS NOT NULL
             
             UNION ALL
             
             SELECT 
                 date,
-                check_in_time,
-                check_out_time,
+                check_in,
+                check_out,
                 'checkout' as type,
-                CONCAT('Check-out pada ', TIME_FORMAT(check_out_time, '%H:%i')) as title,
+                CONCAT('Check-out pada ', TIME_FORMAT(check_out, '%H:%i')) as title,
                 CONCAT('Keluar kantor') as description,
-                CONCAT(date, ' ', check_out_time) as timestamp
+                check_out as timestamp
             FROM attendance 
-            WHERE mahasiswa_id = %s AND check_out_time IS NOT NULL
+            WHERE mahasiswa_id = %s AND check_out IS NOT NULL
             
             ORDER BY timestamp DESC
             LIMIT 10
         """
         
         activities = db._execute(query, (mhs_id, mhs_id), fetch_all=True)
+        
+        # Convert datetime to string for JSON serialization
+        if activities:
+            for activity in activities:
+                if activity.get('timestamp'):
+                    activity['timestamp'] = str(activity['timestamp'])
+                if activity.get('check_in'):
+                    activity['check_in'] = str(activity['check_in'])
+                if activity.get('check_out'):
+                    activity['check_out'] = str(activity['check_out'])
+        
         return ok(activities or [])
         
     except Exception as e:
         logger.error(f"Error getting recent activity: {e}")
+        import traceback
+        traceback.print_exc()
         return err(f'Gagal memuat aktivitas: {str(e)}', 500)
 
 @app.route('/api/mahasiswa/riwayat', methods=['GET'])
@@ -1636,16 +1755,11 @@ def get_mahasiswa_riwayat():
         query = """
             SELECT 
                 a.date,
-                a.check_in_time,
-                a.check_out_time,
-                CASE 
-                    WHEN a.check_in_time IS NOT NULL THEN 'present'
-                    WHEN i.status = 'approved' AND i.type = 'izin' THEN 'izin'
-                    WHEN i.status = 'approved' AND i.type = 'sakit' THEN 'sakit'
-                    ELSE 'absent'
-                END as status
+                TIME(a.check_in) as check_in_time,
+                TIME(a.check_out) as check_out_time,
+                a.status,
+                a.notes
             FROM attendance a
-            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
             WHERE a.mahasiswa_id = %s
         """
         params = [mhs_id]
@@ -1670,10 +1784,20 @@ def get_mahasiswa_riwayat():
         if status and rows:
             rows = [row for row in rows if row['status'] == status]
         
+        # Convert timedelta to string for JSON serialization
+        if rows:
+            for row in rows:
+                if row.get('check_in_time'):
+                    row['check_in_time'] = str(row['check_in_time'])
+                if row.get('check_out_time'):
+                    row['check_out_time'] = str(row['check_out_time'])
+        
         return ok(rows or [])
         
     except Exception as e:
         logger.error(f"Error getting riwayat: {e}")
+        import traceback
+        traceback.print_exc()
         return err(f'Gagal memuat riwayat: {str(e)}', 500)
 
 @app.route('/api/mahasiswa/riwayat/export', methods=['GET'])
@@ -1693,21 +1817,15 @@ def export_riwayat_csv():
         hari = request.args.get('hari')
         bulan = request.args.get('bulan')
         tahun = request.args.get('tahun')
-        status = request.args.get('status')
+        status_filter = request.args.get('status')
         
         query = """
             SELECT 
                 a.date,
-                a.check_in_time,
-                a.check_out_time,
-                CASE 
-                    WHEN a.check_in_time IS NOT NULL THEN 'Hadir'
-                    WHEN i.status = 'approved' AND i.type = 'izin' THEN 'Izin'
-                    WHEN i.status = 'approved' AND i.type = 'sakit' THEN 'Sakit'
-                    ELSE 'Tidak Hadir'
-                END as status
+                a.check_in,
+                a.check_out,
+                a.status
             FROM attendance a
-            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
             WHERE a.mahasiswa_id = %s
         """
         params = [mhs_id]
@@ -1721,19 +1839,18 @@ def export_riwayat_csv():
         if tahun:
             query += " AND YEAR(a.date) = %s"
             params.append(int(tahun))
+        if status_filter:
+            query += " AND a.status = %s"
+            params.append(status_filter)
         
         query += " ORDER BY a.date DESC"
         
         rows = db._execute(query, tuple(params), fetch_all=True)
         
-        if status and rows:
-            status_map = {'present': 'Hadir', 'izin': 'Izin', 'sakit': 'Sakit', 'absent': 'Tidak Hadir'}
-            target_status = status_map.get(status, status)
-            rows = [row for row in rows if row['status'] == target_status]
-        
         # Generate CSV
         import io
         import csv
+        from datetime import datetime, timedelta
         
         output = io.StringIO()
         writer = csv.writer(output)
@@ -1741,33 +1858,58 @@ def export_riwayat_csv():
         # Header
         writer.writerow(['Tanggal', 'Hari', 'Jam Masuk', 'Jam Keluar', 'Status', 'Durasi'])
         
+        # Status mapping
+        status_map = {
+            'present': 'Hadir',
+            'izin': 'Izin',
+            'sakit': 'Sakit',
+            'manual': 'Manual',
+            'absent': 'Tidak Hadir'
+        }
+        
         # Data
         for row in rows:
             date_obj = row['date']
+            if isinstance(date_obj, str):
+                date_obj = datetime.strptime(date_obj, '%Y-%m-%d').date()
+            
             hari_nama = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'][date_obj.weekday()]
             
-            jam_masuk = row['check_in_time'].strftime('%H:%M') if row['check_in_time'] else '-'
-            jam_keluar = row['check_out_time'].strftime('%H:%M') if row['check_out_time'] else '-'
+            # Extract time from datetime
+            jam_masuk = '-'
+            jam_keluar = '-'
+            
+            if row['check_in']:
+                check_in_dt = row['check_in']
+                if isinstance(check_in_dt, str):
+                    check_in_dt = datetime.fromisoformat(check_in_dt)
+                jam_masuk = check_in_dt.strftime('%H:%M')
+            
+            if row['check_out']:
+                check_out_dt = row['check_out']
+                if isinstance(check_out_dt, str):
+                    check_out_dt = datetime.fromisoformat(check_out_dt)
+                jam_keluar = check_out_dt.strftime('%H:%M')
             
             # Calculate duration
             durasi = '-'
-            if row['check_in_time'] and row['check_out_time']:
-                from datetime import datetime, timedelta
-                start = datetime.combine(date_obj, row['check_in_time'])
-                end = datetime.combine(date_obj, row['check_out_time'])
-                if end < start:
-                    end += timedelta(days=1)
-                diff = end - start
+            if row['check_in'] and row['check_out']:
+                check_in_dt = row['check_in'] if isinstance(row['check_in'], datetime) else datetime.fromisoformat(str(row['check_in']))
+                check_out_dt = row['check_out'] if isinstance(row['check_out'], datetime) else datetime.fromisoformat(str(row['check_out']))
+                
+                diff = check_out_dt - check_in_dt
                 hours = diff.seconds // 3600
                 minutes = (diff.seconds % 3600) // 60
                 durasi = f"{hours}j {minutes}m"
+            
+            status_text = status_map.get(row['status'], row['status'])
             
             writer.writerow([
                 date_obj.strftime('%d/%m/%Y'),
                 hari_nama,
                 jam_masuk,
                 jam_keluar,
-                row['status'],
+                status_text,
                 durasi
             ])
         
@@ -1776,7 +1918,7 @@ def export_riwayat_csv():
         
         from flask import make_response
         response = make_response(output.getvalue())
-        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
         response.headers['Content-Disposition'] = f'attachment; filename=riwayat_{mhs["name"]}_{mhs_id}.csv'
         
         return response
@@ -1818,9 +1960,9 @@ def update_mahasiswa_profile(mhs_id):
         logger.error(f"Error updating mahasiswa profile: {e}")
         return err(f'Gagal memperbarui profil: {str(e)}', 500)
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Excel Upload Endpoints
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route('/api/mahasiswa/excel-template', methods=['GET'])
 def download_excel_template():
@@ -2012,6 +2154,325 @@ def upload_excel_mahasiswa():
     except Exception as e:
         logger.error(f"Error uploading Excel: {e}")
         return err(f'Gagal upload Excel: {str(e)}', 500)
+        
+# Sertifikat Endpoints
+
+@app.route('/api/mahasiswa/<mhs_id>/sertifikat/preview', methods=['POST', 'OPTIONS'])
+def preview_sertifikat_stats(mhs_id):
+    """Preview statistics for certificate generation"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        body = request.json
+        periode_type = body.get('type')
+        
+        # Build date filter based on periode type
+        date_filter = ""
+        params = [mhs_id]
+        
+        if periode_type == 'monthly':
+            month = body.get('month')
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) = %s"
+            params.extend([year, month])
+            
+        elif periode_type == 'semester':
+            semester = body.get('semester')
+            year = body.get('year')
+            if semester == 'ganjil':
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (9,10,11,12,1)"
+                params.append(year)
+            else:  # genap
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (2,3,4,5,6)"
+                params.append(year)
+                
+        elif periode_type == 'yearly':
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s"
+            params.append(year)
+            
+        elif periode_type == 'custom':
+            start_date = body.get('startDate')
+            end_date = body.get('endDate')
+            date_filter = "AND a.date BETWEEN %s AND %s"
+            params.extend([start_date, end_date])
+        
+        # Get statistics - FIX: use check_in instead of check_in_time
+        query = f"""
+            SELECT 
+                COUNT(CASE WHEN a.check_in IS NOT NULL THEN 1 END) as total_hadir,
+                COUNT(*) as total_hari,
+                COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as total_izin
+            FROM attendance a
+            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
+            WHERE a.mahasiswa_id = %s {date_filter}
+        """
+        
+        stats = db._execute(query, tuple(params), fetch_one=True)
+        
+        # Calculate percentage
+        total_hari = stats['total_hari'] or 1
+        persentase = round((stats['total_hadir'] / total_hari) * 100, 1)
+        
+        result = {
+            'totalHadir': stats['total_hadir'] or 0,
+            'totalHari': total_hari,
+            'totalIzin': stats['total_izin'] or 0,
+            'persentase': persentase
+        }
+        
+        return ok(result)
+        
+    except Exception as e:
+        logger.error(f"Error previewing sertifikat: {e}")
+        import traceback
+        traceback.print_exc()
+        return err(f'Gagal preview sertifikat: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/sertifikat/history', methods=['GET', 'OPTIONS'])
+def get_sertifikat_history(mhs_id):
+    """Get certificate generation history"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        query = """
+            SELECT * FROM sertifikat_history 
+            WHERE mahasiswa_id = %s 
+            ORDER BY created_at DESC
+        """
+        
+        history = db._execute(query, (mhs_id,), fetch_all=True)
+        
+        # Convert datetime to string
+        if history:
+            for item in history:
+                if item.get('created_at'):
+                    item['created_at'] = str(item['created_at'])
+        
+        return ok(history or [])
+        
+    except Exception as e:
+        logger.error(f"Error getting sertifikat history: {e}")
+        import traceback
+        traceback.print_exc()
+        return err(f'Gagal memuat riwayat sertifikat: {str(e)}', 500)
+
+@app.route('/api/mahasiswa/<mhs_id>/sertifikat/generate', methods=['POST', 'OPTIONS'])
+def generate_sertifikat_pdf(mhs_id):
+    """Generate certificate PDF"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        body = request.json
+        template = body.get('template', 'formal')
+        
+        # Get mahasiswa info
+        mhs = db._execute("SELECT * FROM mahasiswa WHERE id = %s", (mhs_id,), fetch_one=True)
+        if not mhs:
+            return err('Mahasiswa tidak ditemukan', 404)
+        
+        # Get statistics (reuse preview logic)
+        periode_type = body.get('type')
+        date_filter = ""
+        params = [mhs_id]
+        
+        if periode_type == 'monthly':
+            month = body.get('month')
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) = %s"
+            params.extend([year, month])
+        elif periode_type == 'semester':
+            semester = body.get('semester')
+            year = body.get('year')
+            if semester == 'ganjil':
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (9,10,11,12,1)"
+                params.append(year)
+            else:
+                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (2,3,4,5,6)"
+                params.append(year)
+        elif periode_type == 'yearly':
+            year = body.get('year')
+            date_filter = "AND YEAR(a.date) = %s"
+            params.append(year)
+        elif periode_type == 'custom':
+            start_date = body.get('startDate')
+            end_date = body.get('endDate')
+            date_filter = "AND a.date BETWEEN %s AND %s"
+            params.extend([start_date, end_date])
+        
+        # FIX: use check_in instead of check_in_time
+        query = f"""
+            SELECT 
+                COUNT(CASE WHEN a.check_in IS NOT NULL THEN 1 END) as total_hadir,
+                COUNT(*) as total_hari,
+                COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as total_izin
+            FROM attendance a
+            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
+            WHERE a.mahasiswa_id = %s {date_filter}
+        """
+        
+        stats = db._execute(query, tuple(params), fetch_one=True)
+        persentase = round((stats['total_hadir'] / (stats['total_hari'] or 1)) * 100, 1)
+        
+        # Generate PDF certificate
+        pdf_content = generate_certificate_pdf_content(mhs, stats, body, template)
+        
+        # Save to history
+        history_query = """
+            INSERT INTO sertifikat_history 
+            (mahasiswa_id, periode, template, total_hadir, persentase)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        
+        db._execute(history_query, (
+            mhs_id, 
+            json.dumps(body), 
+            template, 
+            stats['total_hadir'], 
+            persentase
+        ))
+        
+        # Return PDF
+        from flask import make_response
+        response = make_response(pdf_content)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename=sertifikat_{mhs["name"]}_{mhs_id}.pdf'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating sertifikat: {e}")
+        import traceback
+        traceback.print_exc()
+        return err(f'Gagal generate sertifikat: {str(e)}', 500)
+
+def generate_certificate_pdf_content(mahasiswa, stats, periode_info, template):
+    """Generate PDF certificate content"""
+    try:
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.colors import HexColor
+        import io
+        
+        buffer = io.BytesIO()
+        
+        # Use landscape orientation for certificate
+        p = canvas.Canvas(buffer, pagesize=landscape(A4))
+        width, height = landscape(A4)
+        
+        # Colors based on template
+        if template == 'formal':
+            primary_color = HexColor('#2D5BFF')
+            secondary_color = HexColor('#6B7A90')
+        elif template == 'modern':
+            primary_color = HexColor('#06D6A0')
+            secondary_color = HexColor('#2D5BFF')
+        else:  # classic
+            primary_color = HexColor('#8B4513')
+            secondary_color = HexColor('#DAA520')
+        
+        # Header
+        p.setFillColor(primary_color)
+        p.setFont("Helvetica-Bold", 24)
+        p.drawCentredString(width/2, height - 80, "SERTIFIKAT KEHADIRAN")
+        
+        # Subtitle
+        p.setFillColor(secondary_color)
+        p.setFont("Helvetica", 14)
+        p.drawCentredString(width/2, height - 110, "Sistem Absensi Digital")
+        
+        # Main content
+        p.setFillColor(HexColor('#000000'))
+        p.setFont("Helvetica", 12)
+        
+        y_pos = height - 180
+        
+        # Certificate text
+        p.drawCentredString(width/2, y_pos, "Diberikan kepada:")
+        
+        y_pos -= 40
+        p.setFont("Helvetica-Bold", 20)
+        p.drawCentredString(width/2, y_pos, mahasiswa['name'])
+        
+        y_pos -= 30
+        p.setFont("Helvetica", 12)
+        p.drawCentredString(width/2, y_pos, f"ID: {mahasiswa['id']} | Kelompok: {mahasiswa['kelompok']} | {mahasiswa['jurusan']}")
+        
+        y_pos -= 60
+        p.drawCentredString(width/2, y_pos, "Atas partisipasi dan kehadiran yang baik dengan pencapaian:")
+        
+        # Statistics box
+        y_pos -= 60
+        box_width = 400
+        box_height = 120
+        box_x = (width - box_width) / 2
+        box_y = y_pos - box_height
+        
+        p.setStrokeColor(primary_color)
+        p.setLineWidth(2)
+        p.rect(box_x, box_y, box_width, box_height)
+        
+        # Statistics content
+        p.setFont("Helvetica-Bold", 14)
+        stat_y = box_y + box_height - 30
+        
+        p.drawCentredString(width/2, stat_y, f"Total Kehadiran: {stats['total_hadir']} dari {stats['total_hari']} hari")
+        stat_y -= 25
+        p.drawCentredString(width/2, stat_y, f"Persentase Kehadiran: {round((stats['total_hadir'] / (stats['total_hari'] or 1)) * 100, 1)}%")
+        stat_y -= 25
+        p.drawCentredString(width/2, stat_y, f"Izin/Sakit: {stats['total_izin']} hari")
+        
+        # Period info
+        y_pos = box_y - 40
+        p.setFont("Helvetica", 10)
+        periode_text = format_periode_text_for_cert(periode_info)
+        p.drawCentredString(width/2, y_pos, f"Periode: {periode_text}")
+        
+        # Footer
+        y_pos -= 60
+        p.setFont("Helvetica", 10)
+        p.drawCentredString(width/2, y_pos, f"Diterbitkan pada: {datetime.now().strftime('%d %B %Y')}")
+        
+        y_pos -= 20
+        p.drawCentredString(width/2, y_pos, "Sistem Absensi Digital - SIABSEN v2.4")
+        
+        p.showPage()
+        p.save()
+        
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF: {e}")
+        raise
+
+def format_periode_text_for_cert(periode_info):
+    """Format periode information for display"""
+    periode_type = periode_info.get('type')
+    
+    if periode_type == 'monthly':
+        month_names = {
+            '01': 'Januari', '02': 'Februari', '03': 'Maret', '04': 'April',
+            '05': 'Mei', '06': 'Juni', '07': 'Juli', '08': 'Agustus',
+            '09': 'September', '10': 'Oktober', '11': 'November', '12': 'Desember'
+        }
+        month_name = month_names.get(periode_info.get('month'), periode_info.get('month'))
+        return f"{month_name} {periode_info.get('year')}"
+        
+    elif periode_type == 'semester':
+        semester = 'Ganjil' if periode_info.get('semester') == 'ganjil' else 'Genap'
+        return f"Semester {semester} {periode_info.get('year')}"
+        
+    elif periode_type == 'yearly':
+        return f"Tahun {periode_info.get('year')}"
+        
+    elif periode_type == 'custom':
+        return f"{periode_info.get('startDate')} s/d {periode_info.get('endDate')}"
+    
+    return "Periode Tidak Diketahui"
 
 
 if __name__ == '__main__':
@@ -2039,9 +2500,9 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, pemusnah_mutlak)
     app.run(debug=True, port=5000, host='0.0.0.0', use_reloader=False)
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Izin/Sakit Submission Endpoints
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route('/api/mahasiswa/<mhs_id>/izin-history', methods=['GET'])
 def get_mahasiswa_izin_history(mhs_id):
@@ -2073,9 +2534,9 @@ def get_izin_submission_detail(submission_id):
         logger.error(f"Error getting izin detail: {e}")
         return err(f'Gagal memuat detail: {str(e)}', 500)
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Kehadiran Manual Submission Endpoints  
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @app.route('/api/kehadiran-submissions', methods=['POST'])
 def submit_kehadiran_manual():
@@ -2147,302 +2608,3 @@ def get_mahasiswa_kehadiran_history(mhs_id):
     except Exception as e:
         logger.error(f"Error getting kehadiran history: {e}")
         return err(f'Gagal memuat riwayat kehadiran: {str(e)}', 500)
-
-# ═══════════════════════════════════════════════════════════════
-# Sertifikat Endpoints
-# ═══════════════════════════════════════════════════════════════
-
-@app.route('/api/mahasiswa/<mhs_id>/sertifikat/preview', methods=['POST'])
-def preview_sertifikat_stats(mhs_id):
-    """Preview statistics for certificate generation"""
-    try:
-        body = request.json
-        periode_type = body.get('type')
-        
-        # Build date filter based on periode type
-        date_filter = ""
-        params = [mhs_id]
-        
-        if periode_type == 'monthly':
-            month = body.get('month')
-            year = body.get('year')
-            date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) = %s"
-            params.extend([year, month])
-            
-        elif periode_type == 'semester':
-            semester = body.get('semester')
-            year = body.get('year')
-            if semester == 'ganjil':
-                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (9,10,11,12,1)"
-                params.append(year)
-            else:  # genap
-                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (2,3,4,5,6)"
-                params.append(year)
-                
-        elif periode_type == 'yearly':
-            year = body.get('year')
-            date_filter = "AND YEAR(a.date) = %s"
-            params.append(year)
-            
-        elif periode_type == 'custom':
-            start_date = body.get('startDate')
-            end_date = body.get('endDate')
-            date_filter = "AND a.date BETWEEN %s AND %s"
-            params.extend([start_date, end_date])
-        
-        # Get statistics
-        query = f"""
-            SELECT 
-                COUNT(CASE WHEN a.check_in_time IS NOT NULL THEN 1 END) as total_hadir,
-                COUNT(*) as total_hari,
-                COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as total_izin
-            FROM attendance a
-            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
-            WHERE a.mahasiswa_id = %s {date_filter}
-        """
-        
-        stats = db._execute(query, tuple(params), fetch_one=True)
-        
-        # Calculate percentage
-        total_hari = stats['total_hari'] or 1
-        persentase = round((stats['total_hadir'] / total_hari) * 100, 1)
-        
-        result = {
-            'totalHadir': stats['total_hadir'] or 0,
-            'totalHari': total_hari,
-            'totalIzin': stats['total_izin'] or 0,
-            'persentase': persentase
-        }
-        
-        return ok(result)
-        
-    except Exception as e:
-        logger.error(f"Error previewing sertifikat: {e}")
-        return err(f'Gagal preview sertifikat: {str(e)}', 500)
-
-@app.route('/api/mahasiswa/<mhs_id>/sertifikat/generate', methods=['POST'])
-def generate_sertifikat_pdf(mhs_id):
-    """Generate certificate PDF"""
-    try:
-        body = request.json
-        template = body.get('template', 'formal')
-        
-        # Get mahasiswa info
-        mhs = db._execute("SELECT * FROM mahasiswa WHERE id = %s", (mhs_id,), fetch_one=True)
-        if not mhs:
-            return err('Mahasiswa tidak ditemukan', 404)
-        
-        # Get statistics (reuse preview logic)
-        periode_type = body.get('type')
-        date_filter = ""
-        params = [mhs_id]
-        
-        if periode_type == 'monthly':
-            month = body.get('month')
-            year = body.get('year')
-            date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) = %s"
-            params.extend([year, month])
-        elif periode_type == 'semester':
-            semester = body.get('semester')
-            year = body.get('year')
-            if semester == 'ganjil':
-                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (9,10,11,12,1)"
-                params.append(year)
-            else:
-                date_filter = "AND YEAR(a.date) = %s AND MONTH(a.date) IN (2,3,4,5,6)"
-                params.append(year)
-        elif periode_type == 'yearly':
-            year = body.get('year')
-            date_filter = "AND YEAR(a.date) = %s"
-            params.append(year)
-        elif periode_type == 'custom':
-            start_date = body.get('startDate')
-            end_date = body.get('endDate')
-            date_filter = "AND a.date BETWEEN %s AND %s"
-            params.extend([start_date, end_date])
-        
-        query = f"""
-            SELECT 
-                COUNT(CASE WHEN a.check_in_time IS NOT NULL THEN 1 END) as total_hadir,
-                COUNT(*) as total_hari,
-                COUNT(CASE WHEN i.status = 'approved' THEN 1 END) as total_izin
-            FROM attendance a
-            LEFT JOIN izin_submissions i ON a.mahasiswa_id = i.mahasiswa_id AND a.date = i.date
-            WHERE a.mahasiswa_id = %s {date_filter}
-        """
-        
-        stats = db._execute(query, tuple(params), fetch_one=True)
-        persentase = round((stats['total_hadir'] / (stats['total_hari'] or 1)) * 100, 1)
-        
-        # Generate PDF certificate
-        pdf_content = generate_certificate_pdf(mhs, stats, body, template)
-        
-        # Save to history
-        history_query = """
-            INSERT INTO sertifikat_history 
-            (mahasiswa_id, periode, template, total_hadir, persentase, created_at)
-            VALUES (%s, %s, %s, %s, %s, NOW())
-        """
-        
-        db._execute(history_query, (
-            mhs_id, 
-            json.dumps(body), 
-            template, 
-            stats['total_hadir'], 
-            persentase
-        ))
-        
-        # Return PDF
-        from flask import make_response
-        response = make_response(pdf_content)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename=sertifikat_{mhs["name"]}_{mhs_id}.pdf'
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating sertifikat: {e}")
-        return err(f'Gagal generate sertifikat: {str(e)}', 500)
-
-def generate_certificate_pdf(mahasiswa, stats, periode_info, template):
-    """Generate PDF certificate content"""
-    try:
-        from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.units import inch
-        from reportlab.lib.colors import HexColor
-        import io
-        
-        buffer = io.BytesIO()
-        
-        # Use landscape orientation for certificate
-        p = canvas.Canvas(buffer, pagesize=landscape(A4))
-        width, height = landscape(A4)
-        
-        # Colors based on template
-        if template == 'formal':
-            primary_color = HexColor('#2D5BFF')
-            secondary_color = HexColor('#6B7A90')
-        elif template == 'modern':
-            primary_color = HexColor('#06D6A0')
-            secondary_color = HexColor('#2D5BFF')
-        else:  # classic
-            primary_color = HexColor('#8B4513')
-            secondary_color = HexColor('#DAA520')
-        
-        # Header
-        p.setFillColor(primary_color)
-        p.setFont("Helvetica-Bold", 24)
-        p.drawCentredText(width/2, height - 80, "SERTIFIKAT KEHADIRAN")
-        
-        # Subtitle
-        p.setFillColor(secondary_color)
-        p.setFont("Helvetica", 14)
-        p.drawCentredText(width/2, height - 110, "Sistem Absensi Digital")
-        
-        # Main content
-        p.setFillColor(HexColor('#000000'))
-        p.setFont("Helvetica", 12)
-        
-        y_pos = height - 180
-        
-        # Certificate text
-        p.drawCentredText(width/2, y_pos, "Diberikan kepada:")
-        
-        y_pos -= 40
-        p.setFont("Helvetica-Bold", 20)
-        p.drawCentredText(width/2, y_pos, mahasiswa['name'])
-        
-        y_pos -= 30
-        p.setFont("Helvetica", 12)
-        p.drawCentredText(width/2, y_pos, f"ID: {mahasiswa['id']} | Kelompok: {mahasiswa['kelompok']} | {mahasiswa['jurusan']}")
-        
-        y_pos -= 60
-        p.drawCentredText(width/2, y_pos, "Atas partisipasi dan kehadiran yang baik dengan pencapaian:")
-        
-        # Statistics box
-        y_pos -= 60
-        box_width = 400
-        box_height = 120
-        box_x = (width - box_width) / 2
-        box_y = y_pos - box_height
-        
-        p.setStrokeColor(primary_color)
-        p.setLineWidth(2)
-        p.rect(box_x, box_y, box_width, box_height)
-        
-        # Statistics content
-        p.setFont("Helvetica-Bold", 14)
-        stat_y = box_y + box_height - 30
-        
-        p.drawCentredText(width/2, stat_y, f"Total Kehadiran: {stats['total_hadir']} dari {stats['total_hari']} hari")
-        stat_y -= 25
-        p.drawCentredText(width/2, stat_y, f"Persentase Kehadiran: {round((stats['total_hadir'] / (stats['total_hari'] or 1)) * 100, 1)}%")
-        stat_y -= 25
-        p.drawCentredText(width/2, stat_y, f"Izin/Sakit: {stats['total_izin']} hari")
-        
-        # Period info
-        y_pos = box_y - 40
-        p.setFont("Helvetica", 10)
-        periode_text = format_periode_text(periode_info)
-        p.drawCentredText(width/2, y_pos, f"Periode: {periode_text}")
-        
-        # Footer
-        y_pos -= 60
-        p.setFont("Helvetica", 10)
-        p.drawCentredText(width/2, y_pos, f"Diterbitkan pada: {datetime.now().strftime('%d %B %Y')}")
-        
-        y_pos -= 20
-        p.drawCentredText(width/2, y_pos, "Sistem Absensi Digital - SIABSEN v2.4")
-        
-        p.showPage()
-        p.save()
-        
-        buffer.seek(0)
-        return buffer.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF: {e}")
-        raise
-
-def format_periode_text(periode_info):
-    """Format periode information for display"""
-    periode_type = periode_info.get('type')
-    
-    if periode_type == 'monthly':
-        month_names = {
-            '01': 'Januari', '02': 'Februari', '03': 'Maret', '04': 'April',
-            '05': 'Mei', '06': 'Juni', '07': 'Juli', '08': 'Agustus',
-            '09': 'September', '10': 'Oktober', '11': 'November', '12': 'Desember'
-        }
-        month_name = month_names.get(periode_info.get('month'), periode_info.get('month'))
-        return f"{month_name} {periode_info.get('year')}"
-        
-    elif periode_type == 'semester':
-        semester = 'Ganjil' if periode_info.get('semester') == 'ganjil' else 'Genap'
-        return f"Semester {semester} {periode_info.get('year')}"
-        
-    elif periode_type == 'yearly':
-        return f"Tahun {periode_info.get('year')}"
-        
-    elif periode_type == 'custom':
-        return f"{periode_info.get('startDate')} s/d {periode_info.get('endDate')}"
-    
-    return "Periode Tidak Diketahui"
-
-@app.route('/api/mahasiswa/<mhs_id>/sertifikat/history', methods=['GET'])
-def get_sertifikat_history(mhs_id):
-    """Get certificate generation history"""
-    try:
-        query = """
-            SELECT * FROM sertifikat_history 
-            WHERE mahasiswa_id = %s 
-            ORDER BY created_at DESC
-        """
-        
-        history = db._execute(query, (mhs_id,), fetch_all=True)
-        return ok(history or [])
-        
-    except Exception as e:
-        logger.error(f"Error getting sertifikat history: {e}")
-        return err(f'Gagal memuat riwayat sertifikat: {str(e)}', 500)

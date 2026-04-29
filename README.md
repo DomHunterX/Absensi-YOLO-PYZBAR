@@ -1,6 +1,6 @@
 # SIABSEN — Sistem Absensi Mahasiswa
 
-Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams**, **Upload Video MP4**, **Form Pengajuan Izin/Sakit**, **Authentication System**, dan **MySQL database**.
+Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi **QR code paper** dan **pyzbar** untuk decode QR code, terintegrasi dengan **RTSP CCTV streams**, **Upload Video MP4**, **Form Pengajuan Izin/Sakit**, **Authentication System**, **Role-Based Access Control (RBAC)**, dan **MySQL database**.
 
 ## 📋 Daftar Isi
 
@@ -8,6 +8,7 @@ Sistem absensi otomatis menggunakan **YOLO object detection** untuk mendeteksi *
 - [Fitur Utama](#-fitur-utama)
 - [Quick Start](#-quick-start)
 - [Authentication System](#-authentication-system)
+- [Role-Based Access Control](#-role-based-access-control)
 - [Training Model YOLO](#-training-model-yolo)
 - [API Endpoints](#-api-endpoints)
 - [Troubleshooting](#-troubleshooting)
@@ -180,22 +181,26 @@ Akses aplikasi:
 ```
 .
 ├── attendance_engine.py      # Core engine (YOLO + QR + RTSP)
-├── api_server.py             # Flask REST API
+├── api_server.py             # Flask REST API + RBAC
 ├── database_manager.py       # MySQL database manager
+├── auth_manager.py           # Authentication & session management
 ├── config_db.py              # Konfigurasi database MySQL
-├── migrate_to_mysql.py       # Script migrasi dari SQLite (opsional)
-├── dashboard.html            # Web dashboard
+├── create_users.py           # Script buat user (admin, timdis, mahasiswa)
+├── seed_mahasiswa.py         # Script import mahasiswa dari CSV
+├── dashboard.html            # Web dashboard (Admin/Timdis)
+├── login.html                # Halaman login (responsive)
 ├── monitor.html              # Live monitoring page
-├── mahasiswa.html              # Portal mahasiswa (izin/sakit & kehadiran manual)
+├── mahasiswa.html            # Portal mahasiswa (izin/sakit & kehadiran manual)
 ├── static/
 │   ├── css/
 │   │   ├── style.css        # UI styling dashboard
+│   │   ├── login.css        # UI styling halaman login (responsive)
 │   │   ├── monitor.css      # UI styling monitor
-│   │   └── mahasiswa.css    # UI styling portal mahasiswa (standalone)
+│   │   └── mahasiswa.css    # UI styling portal mahasiswa
 │   ├── js/
-│   │   ├── script.js        # Frontend logic dashboard
+│   │   ├── script.js        # Frontend logic dashboard + RBAC
 │   │   ├── monitor.js       # Frontend logic monitor
-│   │   └── mahasiswa.js     # Frontend logic portal mahasiswa (eksternal)
+│   │   └── mahasiswa.js     # Frontend logic portal mahasiswa
 │   ├── img/
 │   │   └── logo.png         # Logo aplikasi
 │   └── sounds/
@@ -209,25 +214,25 @@ Akses aplikasi:
 ├── models/
 │   └── yolov8n.pt          # YOLO model (perlu training!)
 ├── logs/
-│   └── attendance.log       # System logs
-├── MIGRASI_MYSQL.md         # Panduan setup MySQL
-├── MYSQL_SETUP.md           # Dokumentasi lengkap MySQL
-├── TRAINING_GUIDE.md        # Panduan training YOLO
-├── TRAINING_COLAB.md        # Panduan training di Google Colab
-├── UPDATE_VIDEO_TO_ATTENDANCE.md  # Dokumentasi fitur video upload
+│   └── attendance.log       # System logs + audit trail RBAC
+├── sample_mahasiswa.csv     # Contoh CSV untuk import mahasiswa
+├── AUTHENTICATION_GUIDE.md  # Panduan authentication system
+├── SEEDER_GUIDE.md          # Panduan seeder mahasiswa
 └── requirements.txt
 ```
 
 ## 🌐 API Endpoints
 
 ### User Management
-- `GET /api/users` - List all users (admin only)
-- `POST /api/users` - Create new user (admin only)
-- `GET /api/users/<id>` - Get user by ID (admin only)
-- `PUT /api/users/<id>` - Update user (admin only)
-- `POST /api/users/<id>/activate` - Activate user (admin only)
-- `POST /api/users/<id>/deactivate` - Deactivate user (admin only)
-- `POST /api/users/<id>/reset-password` - Reset user password (admin only)
+- `GET /api/users` - List all users (admin only) 🔒
+- `POST /api/users` - Create new user (admin only) 🔒
+- `GET /api/users/<id>` - Get user by ID (admin only) 🔒
+- `PUT /api/users/<id>` - Update user (admin only) 🔒
+- `POST /api/users/<id>/activate` - Activate user (admin only) 🔒
+- `POST /api/users/<id>/deactivate` - Deactivate user (admin only) 🔒
+- `POST /api/users/<id>/reset-password` - Reset user password (admin only) 🔒
+
+> 🔒 = Memerlukan token dengan role `admin`
 
 ### Mahasiswa
 - `GET /api/mahasiswa` - List semua mahasiswa
@@ -250,9 +255,9 @@ Akses aplikasi:
 ### Izin/Sakit (NEW! 📝)
 - `POST /api/izin/submit` - Submit pengajuan izin/sakit (Mahasiswa)
   - Form data: `mahasiswa_id`, `type` (izin/sakit), `date`, `keterangan`, `bukti` (file) - **WAJIB**
-- `GET /api/izin/list` - List semua pengajuan (Timdis)
+- `GET /api/izin/list` - List semua pengajuan (Admin/Timdis) 🔒
   - Query: `?status=pending|approved|rejected`
-- `POST /api/izin/verify` - Approve/Reject pengajuan (Timdis)
+- `POST /api/izin/verify` - Approve/Reject pengajuan (Admin/Timdis) 🔒
   - JSON: `submission_id`, `action` (approve/reject), `verified_by`, `rejection_reason`
 - `GET /api/izin/mahasiswa/<id>` - Riwayat pengajuan per mahasiswa
 - `GET /api/izin/bukti/<filename>` - Download/view file bukti
@@ -260,11 +265,13 @@ Akses aplikasi:
 ### Kehadiran Manual (NEW! 🙋)
 - `POST /api/kehadiran/submit` - Submit pengajuan kehadiran manual (Mahasiswa)
   - Form data: `mahasiswa_id`, `date`, `check_in_time`, `check_out_time`, `keterangan`, `bukti` (file) - **SEMUA WAJIB**
-- `GET /api/kehadiran/list` - List semua pengajuan (Timdis)
+- `GET /api/kehadiran/list` - List semua pengajuan (Admin/Timdis) 🔒
   - Query: `?status=pending|approved|rejected`
-- `POST /api/kehadiran/verify` - Approve/Reject pengajuan (Timdis)
+- `POST /api/kehadiran/verify` - Approve/Reject pengajuan (Admin/Timdis) 🔒
   - JSON: `submission_id`, `action` (approve/reject), `verified_by`, `rejection_reason`
 - `GET /api/kehadiran/mahasiswa/<id>` - Riwayat pengajuan per mahasiswa
+
+> 🔒 = Memerlukan token dengan role `admin` atau `timdis`
 
 ### Settings (NEW! ⚙️)
 - `GET /api/settings` - Get semua pengaturan sistem
@@ -423,11 +430,11 @@ SIABSEN dilengkapi dengan sistem authentication & authorization lengkap:
 
 ### Roles & Permissions
 
-| Role | Dashboard | Verifikasi | Manage Users | Portal Mahasiswa |
-|------|-----------|------------|--------------|------------------|
-| **Admin** | ✅ Full | ✅ | ✅ | ✅ |
-| **Timdis** | ✅ Read | ✅ | ❌ | ✅ |
-| **Mahasiswa** | ❌ | ❌ | ❌ | ✅ |
+| Role | Dashboard | Verifikasi | Manage Users | Settings | Portal Mahasiswa |
+|------|-----------|------------|--------------|----------|------------------|
+| **Admin** | ✅ Full | ✅ | ✅ | ✅ | ✅ |
+| **Timdis** | ✅ Read | ✅ | ❌ | ❌ | ✅ |
+| **Mahasiswa** | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 ### Create Users
 
@@ -479,6 +486,101 @@ curl -X POST http://localhost:5000/api/auth/change-password \
 ```
 
 Untuk dokumentasi lengkap, lihat **[AUTHENTICATION_GUIDE.md](AUTHENTICATION_GUIDE.md)**
+
+---
+
+## 🔒 Role-Based Access Control
+
+### Overview
+
+SIABSEN mengimplementasikan RBAC (Role-Based Access Control) untuk membedakan akses antara **Admin** dan **Timdis**.
+
+### Permission Matrix
+
+| Permission | Admin | Timdis | Mahasiswa |
+|------------|-------|--------|-----------|
+| Kelola User (buat/edit/hapus) | ✅ | ❌ | ❌ |
+| Hapus Mahasiswa | ✅ | ❌ | ❌ |
+| Edit Pengaturan Sistem | ✅ | ❌ | ❌ |
+| Verifikasi Izin/Kehadiran | ✅ | ✅ | ❌ |
+| Lihat Dashboard | ✅ | ✅ | ❌ |
+| Portal Mahasiswa | ❌ | ❌ | ✅ |
+
+### Sidebar Menu per Role
+
+**Admin:**
+```
+├── Dashboard
+├── Absensi Hari Ini
+├── User Management  ← Admin only
+├── Mahasiswa
+├── Riwayat
+├── Upload Video
+├── Verifikasi Izin/Sakit
+├── Verifikasi Kehadiran
+└── Pengaturan       ← Admin only
+```
+
+**Timdis:**
+```
+├── Dashboard
+├── Absensi Hari Ini
+├── Mahasiswa        (read-only, tanpa tombol delete)
+├── Riwayat
+├── Upload Video
+├── Verifikasi Izin/Sakit
+└── Verifikasi Kehadiran
+    (User Management — hidden)
+    (Pengaturan — hidden)
+    (Sistem section — hidden)
+```
+
+### Permission Helper Functions (Backend)
+
+```python
+def can_manage_users(user):
+    return user.get('role') == 'admin'
+
+def can_manage_mahasiswa(user):
+    return user.get('role') == 'admin'
+
+def can_verify_submissions(user):
+    return user.get('role') in ['admin', 'timdis']
+
+def can_edit_settings(user):
+    return user.get('role') == 'admin'
+
+def can_view_dashboard(user):
+    return user.get('role') in ['admin', 'timdis']
+```
+
+### Audit Trail
+
+Setiap aksi verifikasi dicatat di log dengan format:
+```
+2026-04-26 10:30:45 [INFO] Izin approved by timdis01 (TIMDIS) - Submission ID: 123
+2026-04-26 10:31:20 [INFO] Kehadiran rejected by admin (ADMIN) - Submission ID: 456
+```
+
+Log file: `logs/attendance.log`
+
+### API Endpoint Protection
+
+```
+Admin only:
+  GET/POST/PUT/DELETE  /api/users/*
+
+Admin + Timdis:
+  GET   /api/izin/list
+  POST  /api/izin/verify
+  GET   /api/kehadiran/list
+  POST  /api/kehadiran/verify
+
+All authenticated:
+  GET   /api/auth/me        ← Returns user + permissions object
+  POST  /api/auth/logout
+  POST  /api/auth/change-password
+```
 
 ---
 
@@ -942,6 +1044,31 @@ Ctrl+Shift+Delete
 curl http://localhost:5000/api/mahasiswa
 ```
 
+### Error 401 Unauthorized pada Verifikasi
+
+**Penyebab:** Request tidak mengirimkan token authentication.
+
+**Solusi:** Sudah diperbaiki di v4.2 — semua fungsi verifikasi sekarang menggunakan `apiFetch()` yang otomatis menyertakan token.
+
+Jika masih terjadi:
+1. Clear browser cache (Ctrl+Shift+Delete)
+2. Hard reload (Ctrl+Shift+R)
+3. Login ulang
+
+### Error 500 pada `/api/kehadiran/list`
+
+**Penyebab:** `check_in_time` dan `check_out_time` bertipe `timedelta` di Python tidak bisa di-serialize ke JSON.
+
+**Solusi:** Sudah diperbaiki di v4.2 — field dikonversi ke string format `HH:MM:SS` sebelum dikembalikan.
+
+### Menu Pengaturan / User Management masih terlihat untuk Timdis
+
+**Solusi:**
+1. Clear browser cache (Ctrl+Shift+Delete)
+2. Hard reload (Ctrl+Shift+R)
+3. Cek console: `console.log(userPermissions)`
+4. Pastikan login sebagai Timdis, bukan Admin
+
 ---
 
 ## 📈 Performance Tips
@@ -988,6 +1115,26 @@ curl http://localhost:5000/api/mahasiswa
 /monitor
 
 ## 🆕 Changelog
+
+### Version 4.2 (2026-04-29)
+- ✅ **RBAC (Role-Based Access Control)** — Pembedaan akses Admin vs Timdis
+  - Permission helper functions di backend (`can_manage_users`, `can_edit_settings`, dll)
+  - `@require_auth(roles=['admin', 'timdis'])` pada endpoint verifikasi izin & kehadiran
+  - Audit trail: log username + role setiap aksi approve/reject
+  - `/api/auth/me` sekarang mengembalikan object `permissions`
+  - Frontend: hide menu "User Management" untuk Timdis
+  - Frontend: hide menu "Pengaturan" dan section "Sistem" untuk Timdis
+  - Frontend: hide tombol delete mahasiswa untuk Timdis
+- ✅ **Fix 401 Unauthorized** — Fungsi `loadIzinSubmissions`, `loadKehadiranSubmissions`, `approveIzin`, `approveKehadiran`, `confirmRejectIzin`, `confirmRejectKehadiran`, `loadIzinPendingCount`, `loadKehadiranPendingCount` diubah dari `fetch()` ke `apiFetch()` agar token ikut terkirim
+- ✅ **Fix 500 Error** — `check_in_time` dan `check_out_time` bertipe `timedelta` di Python tidak bisa di-serialize ke JSON; sekarang dikonversi ke string format `HH:MM:SS`
+- ✅ **Login Page Responsive** — Desain ulang halaman login dengan tema modern
+  - Animated gradient background
+  - Responsive di semua breakpoint (375px — 1920px+)
+  - Fix scroll horizontal di mobile dan desktop
+  - Fix double outline biru pada input field saat focus
+  - Landscape mode support
+  - iOS zoom prevention (font-size 16px pada input)
+- ✅ **User Seeder** — `create_users.py` dan `seed_mahasiswa.py` untuk batch import mahasiswa dari CSV
 
 ### Version 4.1 (2026-04-25)
 - ✅ **Bug Fix** - Perbaikan duplikasi HTML di mahasiswa.html
@@ -1048,8 +1195,8 @@ Contributions welcome! Please:
 
 ---
 
-**Version:** 4.1 (MySQL + Video Upload + Izin/Sakit + Kehadiran Manual + Authentication + Settings + Bug Fixes)  
-**Last Updated:** 2026-04-25
+**Version:** 4.2 (MySQL + Video Upload + Izin/Sakit + Kehadiran Manual + Authentication + RBAC + Settings + Bug Fixes)  
+**Last Updated:** 2026-04-29
 
 ---
 
@@ -1058,4 +1205,4 @@ Contributions welcome! Please:
 2. **Alwan Nabil Priyanto = Frontend, Database**
 3. **Mala Fauziati = Quality Assurance, YOLO Trained**
 
-API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + Video Upload + Form Izin/Sakit + Kehadiran Manual + MySQL**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV atau video upload: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time. Dilengkapi dengan sistem pengajuan izin/sakit untuk mahasiswa yang tidak hadir dan pengajuan kehadiran manual untuk mahasiswa yang hadir tapi tidak tercatat sistem, dengan verifikasi dari Tim Disiplin.
+API Server & Engine Absensi berbasis **YOLO v8 + QR Code + RTSP CCTV + Video Upload + Form Izin/Sakit + Kehadiran Manual + MySQL + RBAC**. Sistem ini mendeteksi kehadiran mahasiswa secara otomatis melalui kamera CCTV atau video upload: YOLO mendeteksi QR code paper, kemudian QR Code dipindai untuk identifikasi, dan hasilnya dicatat ke database MySQL secara real-time. Dilengkapi dengan sistem pengajuan izin/sakit untuk mahasiswa yang tidak hadir dan pengajuan kehadiran manual untuk mahasiswa yang hadir tapi tidak tercatat sistem, dengan verifikasi dari Tim Disiplin. Role-Based Access Control (RBAC) memastikan Admin dan Timdis memiliki akses yang sesuai dengan tanggung jawab masing-masing.
