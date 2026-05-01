@@ -1353,13 +1353,25 @@ def get_kehadiran_by_mahasiswa(mahasiswa_id):
         submissions = db.get_kehadiran_by_mahasiswa(mahasiswa_id)
         
         for sub in submissions:
-            if hasattr(sub.get('date'), 'isoformat'):
+    # ===== datetime → ISO string =====
+            if sub.get('date') and hasattr(sub['date'], 'isoformat'):
                 sub['date'] = sub['date'].isoformat()
-            if hasattr(sub.get('created_at'), 'isoformat'):
+
+            if sub.get('created_at') and hasattr(sub['created_at'], 'isoformat'):
                 sub['created_at'] = sub['created_at'].isoformat()
-            if hasattr(sub.get('verified_at'), 'isoformat') and sub.get('verified_at'):
+
+            if sub.get('verified_at') and hasattr(sub['verified_at'], 'isoformat'):
                 sub['verified_at'] = sub['verified_at'].isoformat()
-        
+
+            # ===== timedelta → HH:MM:SS =====
+            if sub.get('check_in_time') and hasattr(sub['check_in_time'], 'total_seconds'):
+                t = int(sub['check_in_time'].total_seconds())
+                sub['check_in_time'] = f"{t//3600:02d}:{(t%3600)//60:02d}:{t%60:02d}"
+
+            if sub.get('check_out_time') and hasattr(sub['check_out_time'], 'total_seconds'):
+                t = int(sub['check_out_time'].total_seconds())
+                sub['check_out_time'] = f"{t//3600:02d}:{(t%3600)//60:02d}:{t%60:02d}"
+                
         return ok({'submissions': submissions})
         
     except Exception as e:
