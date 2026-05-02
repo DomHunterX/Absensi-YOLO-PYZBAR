@@ -1364,7 +1364,7 @@ def load_settings_from_file():
         # Create default settings
         default_settings = {
             'yolo': {
-                'model_path': 'models/yolov8n.pt',
+                'model_path': 'models/qr_paper_model.pt',
                 'confidence': 0.3,
                 'qr_cooldown': 30
             },

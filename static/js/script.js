@@ -573,15 +573,6 @@ async function removeMahasiswa(id) {
       renderCameras(list);
     }
 
-    function getDemoCameras() {
-      return [
-        { id: 'CAM-01', name: 'Pintu Utama', rtsp_url: 'rtsp://192.168.1.100:554/stream1', location: 'Lobby Lantai 1', is_active: 1, last_seen: '2025-01-11T08:15:00' },
-        { id: 'CAM-02', name: 'Pintu Belakang', rtsp_url: 'rtsp://192.168.1.101:554/stream1', location: 'Area Parkir', is_active: 1, last_seen: '2025-01-11T08:10:00' },
-        { id: 'CAM-03', name: 'Ruang Server', rtsp_url: 'rtsp://192.168.1.102:554/stream1', location: 'Lantai 2', is_active: 0, last_seen: null },
-        { id: 'CAM-04', name: 'Lobby Lift', rtsp_url: 'rtsp://192.168.1.103:554/stream1', location: 'Lantai 1', is_active: 1, last_seen: '2025-01-11T08:14:00' },
-      ];
-    }
-
     function renderCameras(list) {
       const grid = document.getElementById('camera-grid');
       if (!list.length) {

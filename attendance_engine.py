@@ -39,7 +39,7 @@ def load_settings():
     if not SETTINGS_FILE.exists():
         return {
             'yolo': {
-                'model_path': 'models/yolov8n.pt',
+                'model_path': 'models/qr_paper_model.pt',
                 'confidence': 0.3,
                 'qr_cooldown': 30
             },
@@ -57,13 +57,13 @@ def load_settings():
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
         return {
-            'yolo': {'model_path': 'models/yolov8n.pt', 'confidence': 0.3, 'qr_cooldown': 30},
+            'yolo': {'model_path': 'models/qr_paper_model.pt', 'confidence': 0.3, 'qr_cooldown': 30},
             'rtsp': {'frame_width': 1080, 'frame_height': 720, 'frame_fps': 30, 'reconnect_delay': 5}
         }
 
 # Load settings
 _settings = load_settings()
-MODEL_PATH = Path(_settings['yolo'].get('model_path', 'models/yolov8n.pt'))
+MODEL_PATH = Path(_settings['yolo'].get('model_path', 'models/qr_paper_model.pt'))
 YOLO_CONF_THRESHOLD = _settings['yolo'].get('confidence', 0.3)
 QR_COOLDOWN = _settings['yolo'].get('qr_cooldown', 30)
 FRAME_WIDTH = _settings['rtsp'].get('frame_width', 1080)
@@ -472,7 +472,7 @@ if __name__ == '__main__':
 # RTSP CCTV
     processor.add_camera(
         camera_id='CAM-01',
-        rtsp_url='rtsp://admin:admin123456@192.168.1.86:8554/profile0',
+        rtsp_url='rtsp://admin:admin123456@192.168.1.91:8554/profile0',
         name='Pintu Utama',
         location='Lobby Lantai 1'
     )
