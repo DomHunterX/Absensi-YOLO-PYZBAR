@@ -39,9 +39,6 @@
           <span class="badge" id="sidebar-present">0</span>
         </div>
         <div class="nav-section">Data</div>
-        <div class="nav-item" onclick="showPage('users')">
-          <span class="material-symbols-outlined icon">manage_accounts</span> User Management
-        </div>
         <div class="nav-item" onclick="showPage('mahasiswa')">
           <span class="material-symbols-outlined icon">badge</span> Mahasiswa
         </div>
@@ -198,88 +195,13 @@
         </div>
       </section>
 
-      <!-- ===== USER MANAGEMENT SECTION ===== -->
-      <section id="page-users" style="display:none">
-        <div class="page-header">
-          <div>
-            <div class="page-title">User Management</div>
-            <div class="page-sub">Kelola akun pengguna sistem</div>
-          </div>
-          <div class="header-actions">
-            <button class="btn btn-primary btn-sm" onclick="openAddUserModal()">
-              <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">person_add</span>
-              Tambah User
-            </button>
-          </div>
-        </div>
-
-        <!-- Filter dan Pencarian -->
-        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-            <div style="flex:1;min-width:200px">
-              <label class="form-label">Cari Username/Nama</label>
-              <input type="text" id="user-search" class="form-input" placeholder="Ketik username atau nama..." style="padding:7px 10px" oninput="filterUsers()">
-            </div>
-            <div>
-              <label class="form-label">Role</label>
-              <select id="user-filter-role" class="form-input" style="width:150px;padding:7px 10px" onchange="filterUsers()">
-                <option value="">Semua Role</option>
-                <option value="admin">Admin</option>
-                <option value="timdis">Tim Disiplin</option>
-                <option value="mahasiswa">Mahasiswa</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label">Status</label>
-              <select id="user-filter-status" class="form-input" style="width:120px;padding:7px 10px" onchange="filterUsers()">
-                <option value="">Semua</option>
-                <option value="1">Aktif</option>
-                <option value="0">Nonaktif</option>
-              </select>
-            </div>
-            <div style="align-self:flex-end">
-              <button class="btn btn-secondary btn-sm" onclick="resetUserFilter()">
-                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
-                Reset
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tabel Users -->
-        <div class="panel">
-          <table class="att-table">
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Nama Lengkap</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Mahasiswa ID</th>
-                <th>Status</th>
-                <th>Last Login</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody id="users-tbody">
-              <tr>
-                <td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Memuat data...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <section id="page-mahasiswa" style="display:none">
         <div class="page-header">
           <div>
             <div class="page-title">Data Mahasiswa</div>
             <div class="page-sub">Manajemen mahasiswa dan QR Code</div>
           </div>
-          <button class="btn btn-primary" onclick="openAddMahasiswa()">
-            <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle">add</span>
-            Tambah Mahasiswa
-          </button>
+          <button class="btn btn-primary btn-sm" onclick="openAddMahasiswa()"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span> Tambah Mahasiswa</button>
         </div>
         
         <!-- Filter dan Pencarian -->
@@ -704,69 +626,9 @@
 
     </main>
   </div>
-
-  <!-- ===== MODAL USER MANAGEMENT ===== -->
-  <div class="modal-backdrop" id="modal-user">
-    <div class="modal">
-      <div class="modal-title" id="user-modal-title">Tambah User</div>
-      
-      <form id="user-form" onsubmit="submitUser(event)">
-        <input type="hidden" id="user-id" value="">
-        
-        <div class="form-row">
-          <label class="form-label">Username *</label>
-          <input type="text" id="user-username" class="form-input" placeholder="Username untuk login" required>
-          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Username harus unik, tidak bisa diubah setelah dibuat</small>
-        </div>
-
-        <div class="form-row" id="password-row">
-          <label class="form-label">Password *</label>
-          <input type="password" id="user-password" class="form-input" placeholder="Minimal 6 karakter" required>
-          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Minimal 6 karakter</small>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">Nama Lengkap *</label>
-          <input type="text" id="user-fullname" class="form-input" placeholder="Nama lengkap user" required>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">Email</label>
-          <input type="email" id="user-email" class="form-input" placeholder="email@example.com">
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">Role *</label>
-          <select id="user-role" class="form-input" onchange="toggleMahasiswaField()" required>
-            <option value="">-- Pilih Role --</option>
-            <option value="admin">Admin</option>
-            <option value="timdis">Tim Disiplin</option>
-            <option value="mahasiswa">Mahasiswa</option>
-          </select>
-        </div>
-
-        <div class="form-row" id="mahasiswa-id-row" style="display:none">
-          <label class="form-label">Mahasiswa ID *</label>
-          <select id="user-mahasiswa-id" class="form-input">
-            <option value="">-- Pilih Mahasiswa --</option>
-          </select>
-          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">Wajib diisi untuk role Mahasiswa</small>
-        </div>
-
-        <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-user')">Batal</button>
-          <button type="submit" class="btn btn-primary">
-            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">save</span>
-            Simpan
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <div class="modal-backdrop" id="modal-mahasiswa">
     <div class="modal">
-      <div class="modal-title" id="modal-mahasiswa-title">Tambah Mahasiswa</div>
+      <div class="modal-title">Tambah Mahasiswa</div>
       
       <!-- Method Selection -->
       <div class="form-row" style="margin-bottom:20px">

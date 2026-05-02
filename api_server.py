@@ -542,19 +542,7 @@ def mahasiswa_portal():
 
 @app.route('/monitor')
 def monitor():
-    # Check authentication
-    token = get_session_token()
-    
-    if not token:
-        return redirect('/login')
-    
-    validation = auth.validate_session(token)
-    
-    if not validation['valid']:
-        response = redirect('/login')
-        response.set_cookie('session_token', '', expires=0)
-        return response
-    
+    """Monitor page - accessible without authentication"""
     return send_file('monitor.html')
 
 @app.route('/test-api')
