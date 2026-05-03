@@ -832,138 +832,225 @@ def process_video():
 
 def process_video_file(video_path: str, action: str = 'check_in') -> dict:
     """
-    Memproses file video untuk mendeteksi QR Code.
-    Logic: Langsung decode QR dengan pyzbar di setiap frame,
-    YOLO dipakai untuk draw bounding box jika terdeteksi.
+    Memproses file video untuk mendeteksi QR Code dengan comprehensive error handling.
+    
+    Args:
+        video_path: Path ke file video
+        action: 'check_in' atau 'check_out'
+    
+    Returns:
+        dict: Hasil processing dengan deteksi dan statistik
+    
+    Raises:
+        ValueError: Jika video tidak bisa dibuka atau format invalid
+        RuntimeError: Jika terjadi error saat processing
     """
-    cap = cv2.VideoCapture(video_path)
+    cap = None
     
-    if not cap.isOpened():
-        raise ValueError('Tidak dapat membuka file video')
-    
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps > 0 else 0
-    
-    detections = []
-    frame_number = 0
-    recorded_mahasiswa = set()
-    
-    # Proses 5 frame per detik untuk performa
-    skip_frames = max(1, int(fps / 5))
-    
-    action_label = 'Check-in' if action == 'check_in' else 'Check-out'
-    logger.info(f"[VIDEO] Mulai proses: {Path(video_path).name} | {action_label} | {total_frames} frames @ {fps:.1f}fps")
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        # Validate video path
+        if not Path(video_path).exists():
+            raise ValueError(f'File video tidak ditemukan: {video_path}')
         
-        frame_number += 1
-        if frame_number % skip_frames != 0:
-            continue
+        # Open video
+        cap = cv2.VideoCapture(video_path)
         
-        # Langsung decode QR dari frame (sama seperti engine saat QR paper terdeteksi)
-        qr_results = QRCodeGenerator.decode_frame(frame)
+        if not cap.isOpened():
+            raise ValueError('Tidak dapat membuka file video. Pastikan format video valid (MP4, H.264)')
         
-        if not qr_results:
-            continue
+        # Get video properties
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
         
-        # Juga coba deteksi YOLO untuk confidence info (opsional, tidak blocking)
-        try:
-            qr_papers = yolo.detect_qr_papers(frame)
-            max_conf = max(p['confidence'] for p in qr_papers) if qr_papers else 1.0
-        except Exception:
-            max_conf = 1.0
+        if total_frames == 0:
+            raise ValueError('Video kosong atau corrupt')
         
-        for qr in qr_results:
-            qr_data = qr['data']
-            
-            mahasiswa = db.get_mahasiswa_by_qr(qr_data)
-            if not mahasiswa:
-                logger.warning(f"[VIDEO] QR tidak dikenal: {qr_data}")
-                continue
-            
-            mahasiswa_id = mahasiswa['id']
-            timestamp = frame_number / fps
-            already_recorded = mahasiswa_id in recorded_mahasiswa
-            
-            attendance_result = None
-            status_message = None
-            
-            if not already_recorded:
-                snapshot_path = save_video_frame(frame, mahasiswa_id, frame_number, video_path)
-                attendance_result = db.record_attendance(
-                    mahasiswa_id,
-                    action,
-                    'VIDEO-UPLOAD',
-                    snapshot_path,
-                    max_conf
-                )
+        detections = []
+        frame_number = 0
+        recorded_mahasiswa = set()
+        error_count = 0
+        max_errors = 10  # Maximum consecutive errors before abort
+        
+        # Proses 5 frame per detik untuk performa
+        skip_frames = max(1, int(fps / 5))
+        
+        action_label = 'Check-in' if action == 'check_in' else 'Check-out'
+        logger.info(f"[VIDEO] Mulai proses: {Path(video_path).name} | {action_label} | {total_frames} frames @ {fps:.1f}fps")
+        
+        while True:
+            try:
+                ret, frame = cap.read()
+                if not ret:
+                    break
                 
-                # Check if already checked in/out today
-                if attendance_result['status'] == 'already_checked_in':
-                    status_message = f"Sudah check-in hari ini"
-                    logger.info(f"[VIDEO] âš  {mahasiswa['name']} â€” Sudah check-in sebelumnya")
-                elif attendance_result['status'] == 'already_checked_out':
-                    status_message = f"Sudah check-out hari ini"
-                    logger.info(f"[VIDEO] âš  {mahasiswa['name']} â€” Sudah check-out sebelumnya")
-                elif attendance_result['status'] == 'not_checked_in':
-                    status_message = f"Belum check-in, tidak bisa check-out"
-                    logger.info(f"[VIDEO] âš  {mahasiswa['name']} â€” Belum check-in")
-                else:
-                    recorded_mahasiswa.add(mahasiswa_id)
-                    logger.info(f"[VIDEO] âœ“ {mahasiswa['name']} â€” {action_label} | frame #{frame_number} | conf {max_conf:.2%}")
-            
-            detections.append({
-                'frame_number': frame_number,
-                'timestamp': timestamp,
-                'qr_code': qr_data,
-                'mahasiswa_name': mahasiswa['name'],
-                'mahasiswa_id': mahasiswa_id,
-                'kelompok': mahasiswa['kelompok'],
-                'confidence': max_conf,
-                'recorded': not already_recorded and attendance_result and attendance_result['status'] in ['checked_in', 'checked_out'],
-                'attendance_result': attendance_result,
-                'status_message': status_message
-            })
-    
-    cap.release()
-    
-    recorded_count = len(recorded_mahasiswa)
-    
-    # Hitung mahasiswa yang sudah check-in/out sebelumnya (unique only)
-    already_processed = [d for d in detections if d.get('status_message')]
-    skipped_count = len(set(d['mahasiswa_id'] for d in already_processed))
-    
-    # Buat list unique mahasiswa yang dilewati (tidak duplikat)
-    skipped_unique = {}
-    for d in already_processed:
-        if d['mahasiswa_id'] not in skipped_unique:
-            skipped_unique[d['mahasiswa_id']] = {
-                'name': d['mahasiswa_name'],
-                'reason': d['status_message']
-            }
-    
-    logger.info(f"[VIDEO] Selesai: {recorded_count} {action_label} tercatat dari {len(detections)} deteksi")
-    if skipped_count > 0:
-        logger.info(f"[VIDEO] {skipped_count} mahasiswa dilewati (sudah {action_label} hari ini)")
-    
-    return {
-        'filename': Path(video_path).name,
-        'duration': duration,
-        'fps': fps,
-        'total_frames': total_frames,
-        'processed_frames': frame_number,
-        'detections': detections,
-        'unique_qr_codes': len(set(d['qr_code'] for d in detections)),
-        'recorded_count': recorded_count,
-        'unique_mahasiswa': recorded_count,
-        'skipped_count': skipped_count,
-        'skipped_mahasiswa': list(skipped_unique.values()),  # Unique list only
-        'action': action
-    }
+                frame_number += 1
+                if frame_number % skip_frames != 0:
+                    continue
+                
+                # Validate frame
+                if frame is None or frame.size == 0:
+                    logger.warning(f"[VIDEO] Frame #{frame_number} kosong, skip")
+                    error_count += 1
+                    if error_count >= max_errors:
+                        logger.error(f"[VIDEO] Terlalu banyak error ({error_count}), abort processing")
+                        break
+                    continue
+                
+                # Reset error count on successful frame read
+                error_count = 0
+                
+                # Decode QR dari frame
+                try:
+                    qr_results = QRCodeGenerator.decode_frame(frame)
+                except Exception as e:
+                    logger.warning(f"[VIDEO] Error decode QR frame #{frame_number}: {e}")
+                    continue
+                
+                if not qr_results:
+                    continue
+                
+                # Deteksi YOLO untuk confidence info (opsional, tidak blocking)
+                max_conf = 1.0
+                try:
+                    qr_papers = yolo.detect_qr_papers(frame)
+                    if qr_papers:
+                        max_conf = max(p['confidence'] for p in qr_papers)
+                except Exception as e:
+                    # YOLO error tidak blocking, hanya log
+                    logger.debug(f"[VIDEO] YOLO detection error frame #{frame_number}: {e}")
+                    max_conf = 1.0
+                
+                # Process each detected QR code
+                for qr in qr_results:
+                    try:
+                        qr_data = qr['data']
+                        
+                        # Get mahasiswa data
+                        mahasiswa = db.get_mahasiswa_by_qr(qr_data)
+                        if not mahasiswa:
+                            logger.warning(f"[VIDEO] QR tidak dikenal: {qr_data}")
+                            continue
+                        
+                        mahasiswa_id = mahasiswa['id']
+                        timestamp = frame_number / fps
+                        already_recorded = mahasiswa_id in recorded_mahasiswa
+                        
+                        attendance_result = None
+                        status_message = None
+                        
+                        if not already_recorded:
+                            # Save snapshot
+                            try:
+                                snapshot_path = save_video_frame(frame, mahasiswa_id, frame_number, video_path)
+                            except Exception as e:
+                                logger.error(f"[VIDEO] Error save snapshot: {e}")
+                                snapshot_path = ''
+                            
+                            # Record attendance
+                            try:
+                                attendance_result = db.record_attendance(
+                                    mahasiswa_id,
+                                    action,
+                                    'VIDEO-UPLOAD',
+                                    snapshot_path,
+                                    max_conf
+                                )
+                            except Exception as e:
+                                logger.error(f"[VIDEO] Error record attendance for {mahasiswa_id}: {e}")
+                                continue
+                            
+                            # Check attendance status
+                            if attendance_result['status'] == 'already_checked_in':
+                                status_message = f"Sudah check-in hari ini"
+                                logger.info(f"[VIDEO] Warning: {mahasiswa['name']} - Sudah check-in sebelumnya")
+                            elif attendance_result['status'] == 'already_checked_out':
+                                status_message = f"Sudah check-out hari ini"
+                                logger.info(f"[VIDEO] Warning: {mahasiswa['name']} - Sudah check-out sebelumnya")
+                            elif attendance_result['status'] == 'not_checked_in':
+                                status_message = f"Belum check-in, tidak bisa check-out"
+                                logger.info(f"[VIDEO] Warning: {mahasiswa['name']} - Belum check-in")
+                            else:
+                                recorded_mahasiswa.add(mahasiswa_id)
+                                logger.info(f"[VIDEO] Success: {mahasiswa['name']} - {action_label} | frame #{frame_number} | conf {max_conf:.2%}")
+                        
+                        # Add to detections
+                        detections.append({
+                            'frame_number': frame_number,
+                            'timestamp': timestamp,
+                            'qr_code': qr_data,
+                            'mahasiswa_name': mahasiswa['name'],
+                            'mahasiswa_id': mahasiswa_id,
+                            'kelompok': mahasiswa['kelompok'],
+                            'confidence': max_conf,
+                            'recorded': not already_recorded and attendance_result and attendance_result['status'] in ['checked_in', 'checked_out'],
+                            'attendance_result': attendance_result,
+                            'status_message': status_message
+                        })
+                        
+                    except Exception as e:
+                        logger.error(f"[VIDEO] Error processing QR {qr.get('data', 'unknown')}: {e}")
+                        continue
+                        
+            except Exception as e:
+                logger.error(f"[VIDEO] Error processing frame #{frame_number}: {e}")
+                error_count += 1
+                if error_count >= max_errors:
+                    logger.error(f"[VIDEO] Terlalu banyak error ({error_count}), abort processing")
+                    break
+                continue
+        
+        # Calculate results
+        recorded_count = len(recorded_mahasiswa)
+        
+        # Hitung mahasiswa yang sudah check-in/out sebelumnya (unique only)
+        already_processed = [d for d in detections if d.get('status_message')]
+        skipped_count = len(set(d['mahasiswa_id'] for d in already_processed))
+        
+        # Buat list unique mahasiswa yang dilewati (tidak duplikat)
+        skipped_unique = {}
+        for d in already_processed:
+            if d['mahasiswa_id'] not in skipped_unique:
+                skipped_unique[d['mahasiswa_id']] = {
+                    'name': d['mahasiswa_name'],
+                    'reason': d['status_message']
+                }
+        
+        logger.info(f"[VIDEO] Selesai: {recorded_count} {action_label} tercatat dari {len(detections)} deteksi")
+        if skipped_count > 0:
+            logger.info(f"[VIDEO] {skipped_count} mahasiswa dilewati (sudah {action_label} hari ini)")
+        
+        return {
+            'filename': Path(video_path).name,
+            'duration': duration,
+            'fps': fps,
+            'total_frames': total_frames,
+            'processed_frames': frame_number,
+            'detections': detections,
+            'unique_qr_codes': len(set(d['qr_code'] for d in detections)),
+            'recorded_count': recorded_count,
+            'unique_mahasiswa': recorded_count,
+            'skipped_count': skipped_count,
+            'skipped_mahasiswa': list(skipped_unique.values()),
+            'action': action,
+            'errors': error_count
+        }
+        
+    except ValueError as e:
+        # Validation errors
+        logger.error(f"[VIDEO] Validation error: {e}")
+        raise
+    except Exception as e:
+        # Unexpected errors
+        logger.error(f"[VIDEO] Unexpected error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise RuntimeError(f"Error processing video: {str(e)}")
+    finally:
+        # Always release video capture
+        if cap is not None:
+            cap.release()
+            logger.debug(f"[VIDEO] Video capture released")
 
 def save_video_frame(frame, mahasiswa_id: str, frame_number: int, video_path: str) -> str:
     """
