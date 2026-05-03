@@ -59,6 +59,9 @@
           <span class="badge badge-warning" id="sidebar-pending-kehadiran">0</span>
         </div>
         <div class="nav-section">Sistem</div>
+        <div class="nav-item" onclick="showPage('users')">
+          <span class="material-symbols-outlined icon">manage_accounts</span> User Management
+        </div>
         <div class="nav-item" onclick="showPage('settings')">
           <span class="material-symbols-outlined icon">settings</span> Pengaturan
         </div>
@@ -624,11 +627,206 @@
         </div>
       </section>
 
+      <!-- ===== USER MANAGEMENT PAGE ===== -->
+      <section id="page-users" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">User Management</div>
+            <div class="page-sub">Kelola akun pengguna sistem</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddUserModal()">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">person_add</span>
+            Tambah User
+          </button>
+        </div>
+
+        <!-- Stats Cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px">
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">admin_panel_settings</span>
+            <div class="stat-label">Admin</div>
+            <div class="stat-value" id="stat-admin-count">0</div>
+          </div>
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">shield_person</span>
+            <div class="stat-label">Tim Disiplin</div>
+            <div class="stat-value" id="stat-timdis-count">0</div>
+          </div>
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">school</span>
+            <div class="stat-label">Mahasiswa</div>
+            <div class="stat-value" id="stat-mahasiswa-count">0</div>
+          </div>
+          <div class="stat-card">
+            <span class="material-symbols-outlined stat-icon">group</span>
+            <div class="stat-label">Total Users</div>
+            <div class="stat-value" id="stat-total-users">0</div>
+          </div>
+        </div>
+
+        <!-- Filter dan Pencarian -->
+        <div class="panel" style="margin-bottom:16px;padding:14px 20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1;min-width:200px">
+              <label class="form-label">Cari Username/Nama</label>
+              <input type="text" id="user-search" class="form-input" placeholder="Ketik username atau nama..." style="padding:7px 10px" oninput="filterUsers()">
+            </div>
+            <div>
+              <label class="form-label">Role</label>
+              <select id="user-filter-role" class="form-input" style="width:150px;padding:7px 10px" onchange="filterUsers()">
+                <option value="">Semua</option>
+                <option value="admin">Admin</option>
+                <option value="timdis">Tim Disiplin</option>
+                <option value="mahasiswa">Mahasiswa</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Status</label>
+              <select id="user-filter-status" class="form-input" style="width:120px;padding:7px 10px" onchange="filterUsers()">
+                <option value="">Semua</option>
+                <option value="1">Aktif</option>
+                <option value="0">Nonaktif</option>
+              </select>
+            </div>
+            <div style="align-self:flex-end">
+              <button class="btn btn-secondary btn-sm" onclick="resetUserFilter()">
+                <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">refresh</span>
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabel Users -->
+        <div class="panel">
+          <table class="att-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Mahasiswa ID</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr>
+                <td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Memuat...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
     </main>
   </div>
+
+  <!-- Modal Add/Edit User -->
+  <div class="modal-backdrop" id="modal-user">
+    <div class="modal">
+      <div class="modal-title" id="modal-user-title">Tambah User</div>
+      
+      <form id="user-form" onsubmit="submitUser(event)">
+        <input type="hidden" id="user-id" value="">
+        
+        <div class="form-row">
+          <label class="form-label">Username *</label>
+          <input type="text" id="user-username" class="form-input" placeholder="Username" required>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+            Username harus unik, tanpa spasi
+          </small>
+        </div>
+
+        <div class="form-row" id="password-row">
+          <label class="form-label">Password *</label>
+          <input type="password" id="user-password" class="form-input" placeholder="Password" required>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+            Minimal 6 karakter
+          </small>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Nama Lengkap *</label>
+          <input type="text" id="user-fullname" class="form-input" placeholder="Nama Lengkap" required>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Email</label>
+          <input type="email" id="user-email" class="form-input" placeholder="email@example.com">
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Role *</label>
+          <select id="user-role" class="form-input" onchange="toggleMahasiswaField()" required>
+            <option value="">-- Pilih Role --</option>
+            <option value="admin">Admin</option>
+            <option value="timdis">Tim Disiplin</option>
+            <option value="mahasiswa">Mahasiswa</option>
+          </select>
+        </div>
+
+        <div class="form-row" id="mahasiswa-id-row" style="display:none">
+          <label class="form-label">Mahasiswa ID *</label>
+          <select id="user-mahasiswa-id" class="form-input">
+            <option value="">-- Pilih Mahasiswa --</option>
+          </select>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+            Hanya mahasiswa yang belum punya akun
+          </small>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-user')">Batal</button>
+          <button type="submit" class="btn btn-primary">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">save</span>
+            Simpan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Reset Password -->
+  <div class="modal-backdrop" id="modal-reset-password">
+    <div class="modal">
+      <div class="modal-title">Reset Password</div>
+      
+      <form id="reset-password-form" onsubmit="submitResetPassword(event)">
+        <input type="hidden" id="reset-user-id" value="">
+        
+        <p style="margin-bottom:20px;color:var(--text-muted)">
+          Reset password untuk user: <strong id="reset-username"></strong>
+        </p>
+
+        <div class="form-row">
+          <label class="form-label">Password Baru *</label>
+          <input type="password" id="reset-new-password" class="form-input" placeholder="Password baru" required>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+            Minimal 6 karakter
+          </small>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Konfirmasi Password *</label>
+          <input type="password" id="reset-confirm-password" class="form-input" placeholder="Ketik ulang password" required>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-reset-password')">Batal</button>
+          <button type="submit" class="btn btn-primary">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">lock_reset</span>
+            Reset Password
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="modal-mahasiswa">
     <div class="modal">
-      <div class="modal-title">Tambah Mahasiswa</div>
+      <div class="modal-title">QR-CODE</div>
       
       <!-- Method Selection -->
       <div class="form-row" style="margin-bottom:20px">
@@ -829,7 +1027,7 @@
   </div>
 
   <!-- Main Dashboard Script -->
-  <script src="static/js/script.js"></script>
+  <script src="static/js/script.js?v=2.5"></script>
 </body>
 
 </html>

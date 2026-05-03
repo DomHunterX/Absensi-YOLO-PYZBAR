@@ -1558,12 +1558,6 @@ async function removeMahasiswa(id) {
       toast('Model dipilih', modelPath);
     }
 
-    // ─── Auto refresh ────────────────────────────────────────────────────────────    // ─── Auto refresh ────────────────────────────────────────────────────────────
-    function refreshData() {
-      loadDashboard();
-      toast('Data diperbarui', new Date().toLocaleTimeString('id-ID'));
-    }
-
     setInterval(() => {
       if (currentPage === 'dashboard') loadDashboard();
       if (currentPage === 'attendance') loadFullAttendance();
@@ -2064,162 +2058,179 @@ function resetKehadiranFilter() {
 let usersData = [];
 let filteredUsersData = [];
 
-// Load all users
-async function loadUsers() {
-  try {
-    const token = getAuthToken();
-    const response = await fetch(`${API}/users`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      usersData = result.data;
-      filteredUsersData = [...usersData];
-      renderUsers();
-    } else {
-      toast('Error', result.message, true);
-    }
-  } catch (error) {
-    console.error('Error loading users:', error);
-    toast('Error', 'Gagal memuat data users', true);
-  }
-}
+// ─── User Management ────────────────────────────────────────────────────────
+let availableMahasiswaForUser = [];
 
-// Render users table
-function renderUsers() {
-  const tbody = document.getElementById('users-tbody');
-  
-  if (filteredUsersData.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Tidak ada data user</td></tr>';
+async function loadUsers() {
+  const res = await apiFetch('/users');
+  if (!res || !res.success) {
+    toast('Gagal memuat users', '', true);
     return;
   }
   
-  tbody.innerHTML = filteredUsersData.map(user => {
-    const statusBadge = user.is_active 
-      ? '<span class="badge badge-success">Aktif</span>' 
-      : '<span class="badge badge-danger">Nonaktif</span>';
+  usersData = res.data;
+  renderUsers(usersData);
+  updateUserStats(usersData);
+}
+
+function updateUserStats(users) {
+  const adminCount = users.filter(u => u.role === 'admin').length;
+  const timdisCount = users.filter(u => u.role === 'timdis').length;
+  const mahasiswaCount = users.filter(u => u.role === 'mahasiswa').length;
+  
+  document.getElementById('stat-admin-count').textContent = adminCount;
+  document.getElementById('stat-timdis-count').textContent = timdisCount;
+  document.getElementById('stat-mahasiswa-count').textContent = mahasiswaCount;
+  document.getElementById('stat-total-users').textContent = users.length;
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById('users-tbody');
+  
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Tidak ada user ditemukan</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = users.map(user => {
+    const initials = user.full_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const colors = ['#4f7cff', '#22d3a0', '#f5a623', '#ff6b6b', '#a78bfa'];
+    const colorIndex = user.id % colors.length;
+    const color = colors[colorIndex];
     
-    const roleBadge = user.role === 'admin' 
-      ? '<span class="badge badge-primary">Admin</span>'
-      : user.role === 'timdis'
-      ? '<span class="badge badge-info">Tim Disiplin</span>'
-      : '<span class="badge badge-secondary">Mahasiswa</span>';
+    const roleBadge = {
+      'admin': '<span class="badge" style="background:#ff6b6b;color:white">Admin</span>',
+      'timdis': '<span class="badge" style="background:#f5a623;color:white">Tim Disiplin</span>',
+      'mahasiswa': '<span class="badge badge-blue">Mahasiswa</span>'
+    }[user.role] || user.role;
+    
+    const statusBadge = user.is_active 
+      ? '<span class="badge badge-green">Aktif</span>'
+      : '<span class="badge badge-red">Nonaktif</span>';
     
     const lastLogin = user.last_login 
-      ? new Date(user.last_login).toLocaleString('id-ID')
-      : 'Belum pernah login';
+      ? new Date(user.last_login).toLocaleString('id-ID', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})
+      : '<span style="color:var(--muted)">Belum pernah</span>';
     
-    const mahasiswaId = user.mahasiswa_id || '-';
+    const mahasiswaId = user.mahasiswa_id 
+      ? `<span style="font-family:var(--mono);font-size:11px;background:var(--bg3);padding:2px 6px;border-radius:4px">${user.mahasiswa_id}</span>`
+      : '<span style="color:var(--muted)">—</span>';
     
-    return `
-      <tr>
-        <td><strong>${user.username}</strong></td>
-        <td>${user.full_name}</td>
-        <td>${user.email || '-'}</td>
-        <td>${roleBadge}</td>
-        <td>${mahasiswaId}</td>
-        <td>${statusBadge}</td>
-        <td style="font-size:12px">${lastLogin}</td>
-        <td>
+    return `<tr>
+      <td>
+        <div class="mahasiswa-cell">
+          <div class="avatar" style="background:${color}22;color:${color}">${initials}</div>
+          <div>
+            <div class="mhs-name">${user.full_name}</div>
+            <div class="mhs-dept" style="font-family:var(--mono);font-size:11px">${user.username}</div>
+          </div>
+        </div>
+      </td>
+      <td style="font-size:12px;color:var(--muted)">${user.email || '—'}</td>
+      <td>${roleBadge}</td>
+      <td>${mahasiswaId}</td>
+      <td>${statusBadge}</td>
+      <td style="font-size:11px;color:var(--muted)">${lastLogin}</td>
+      <td>
+        <div style="display:flex;gap:4px">
           <button class="btn btn-ghost btn-sm" onclick="editUser(${user.id})" title="Edit">
             <span class="material-symbols-outlined" style="font-size:16px">edit</span>
           </button>
-          ${user.is_active 
-            ? `<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(${user.id}, 0)" title="Nonaktifkan">
-                <span class="material-symbols-outlined" style="font-size:16px;color:var(--danger)">block</span>
-              </button>`
-            : `<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(${user.id}, 1)" title="Aktifkan">
-                <span class="material-symbols-outlined" style="font-size:16px;color:var(--success)">check_circle</span>
-              </button>`
-          }
-          <button class="btn btn-ghost btn-sm" onclick="resetUserPassword(${user.id})" title="Reset Password">
+          <button class="btn btn-ghost btn-sm" onclick="openResetPasswordModal(${user.id}, '${user.username}')" title="Reset Password">
             <span class="material-symbols-outlined" style="font-size:16px">lock_reset</span>
           </button>
-        </td>
-      </tr>
-    `;
+          ${user.is_active 
+            ? `<button class="btn btn-danger btn-sm" onclick="toggleUserStatus(${user.id}, false)" title="Nonaktifkan">
+                <span class="material-symbols-outlined" style="font-size:16px">block</span>
+              </button>`
+            : `<button class="btn btn-primary btn-sm" onclick="toggleUserStatus(${user.id}, true)" title="Aktifkan">
+                <span class="material-symbols-outlined" style="font-size:16px">check_circle</span>
+              </button>`
+          }
+        </div>
+      </td>
+    </tr>`;
   }).join('');
 }
 
-// Filter users
 function filterUsers() {
   const searchTerm = document.getElementById('user-search').value.toLowerCase();
-  const roleFilter = document.getElementById('user-filter-role').value;
-  const statusFilter = document.getElementById('user-filter-status').value;
+  const filterRole = document.getElementById('user-filter-role').value;
+  const filterStatus = document.getElementById('user-filter-status').value;
   
-  filteredUsersData = usersData.filter(user => {
-    const matchSearch = user.username.toLowerCase().includes(searchTerm) || 
-                       user.full_name.toLowerCase().includes(searchTerm);
-    const matchRole = !roleFilter || user.role === roleFilter;
-    const matchStatus = !statusFilter || user.is_active.toString() === statusFilter;
-    
-    return matchSearch && matchRole && matchStatus;
-  });
+  let filtered = usersData;
   
-  renderUsers();
+  // Filter by search term (username or full name)
+  if (searchTerm) {
+    filtered = filtered.filter(u => 
+      u.username.toLowerCase().includes(searchTerm) || 
+      u.full_name.toLowerCase().includes(searchTerm)
+    );
+  }
+  
+  // Filter by role
+  if (filterRole) {
+    filtered = filtered.filter(u => u.role === filterRole);
+  }
+  
+  // Filter by status
+  if (filterStatus !== '') {
+    const isActive = filterStatus === '1';
+    filtered = filtered.filter(u => u.is_active === isActive);
+  }
+  
+  renderUsers(filtered);
 }
 
-// Reset filter
 function resetUserFilter() {
   document.getElementById('user-search').value = '';
   document.getElementById('user-filter-role').value = '';
   document.getElementById('user-filter-status').value = '';
-  filteredUsersData = [...usersData];
-  renderUsers();
+  renderUsers(usersData);
 }
 
-// Open add user modal
 async function openAddUserModal() {
-  document.getElementById('user-modal-title').textContent = 'Tambah User';
-  document.getElementById('user-id').value = '';
+  // Reset form
   document.getElementById('user-form').reset();
-  document.getElementById('password-row').style.display = '';
+  document.getElementById('user-id').value = '';
+  document.getElementById('modal-user-title').textContent = 'Tambah User';
+  document.getElementById('password-row').style.display = 'block';
   document.getElementById('user-password').required = true;
-  document.getElementById('user-username').disabled = false;
+  document.getElementById('mahasiswa-id-row').style.display = 'none';
   
-  // Load mahasiswa list for dropdown
-  await loadMahasiswaForUserForm();
+  // Load available mahasiswa (yang belum punya akun)
+  await loadAvailableMahasiswa();
   
+  // Open modal
   document.getElementById('modal-user').classList.add('show');
 }
 
-// Load mahasiswa list for user form
-async function loadMahasiswaForUserForm() {
-  try {
-    const response = await fetch(`${API}/mahasiswa`);
-    const result = await response.json();
-    
-    if (result.success) {
-      const select = document.getElementById('user-mahasiswa-id');
-      select.innerHTML = '<option value="">-- Pilih Mahasiswa --</option>';
-      
-      // Filter mahasiswa yang belum punya user account
-      const mahasiswaWithoutUser = result.data.filter(mhs => {
-        return !usersData.some(user => user.mahasiswa_id === mhs.id);
-      });
-      
-      mahasiswaWithoutUser.forEach(mhs => {
-        select.innerHTML += `<option value="${mhs.id}">${mhs.id} - ${mhs.name}</option>`;
-      });
-    }
-  } catch (error) {
-    console.error('Error loading mahasiswa:', error);
-  }
+async function loadAvailableMahasiswa() {
+  const res = await apiFetch('/mahasiswa');
+  if (!res || !res.success) return;
+  
+  const allMahasiswa = res.data;
+  
+  // Filter mahasiswa yang belum punya user account
+  availableMahasiswaForUser = allMahasiswa.filter(mhs => {
+    return !usersData.some(user => user.mahasiswa_id === mhs.id);
+  });
+  
+  // Populate dropdown
+  const select = document.getElementById('user-mahasiswa-id');
+  select.innerHTML = '<option value="">-- Pilih Mahasiswa --</option>' +
+    availableMahasiswaForUser.map(mhs => 
+      `<option value="${mhs.id}">${mhs.id} - ${mhs.name}</option>`
+    ).join('');
 }
 
-// Toggle mahasiswa field based on role
 function toggleMahasiswaField() {
   const role = document.getElementById('user-role').value;
   const mahasiswaRow = document.getElementById('mahasiswa-id-row');
   const mahasiswaSelect = document.getElementById('user-mahasiswa-id');
   
   if (role === 'mahasiswa') {
-    mahasiswaRow.style.display = '';
+    mahasiswaRow.style.display = 'block';
     mahasiswaSelect.required = true;
   } else {
     mahasiswaRow.style.display = 'none';
@@ -2228,233 +2239,152 @@ function toggleMahasiswaField() {
   }
 }
 
-// Edit user
 async function editUser(userId) {
   const user = usersData.find(u => u.id === userId);
   if (!user) return;
   
-  document.getElementById('user-modal-title').textContent = 'Edit User';
+  // Load available mahasiswa first
+  await loadAvailableMahasiswa();
+  
+  // Fill form
   document.getElementById('user-id').value = user.id;
   document.getElementById('user-username').value = user.username;
   document.getElementById('user-username').disabled = true; // Username tidak bisa diubah
   document.getElementById('user-fullname').value = user.full_name;
   document.getElementById('user-email').value = user.email || '';
   document.getElementById('user-role').value = user.role;
+  document.getElementById('user-role').disabled = true; // Role tidak bisa diubah
   
-  // Hide password field when editing
+  // Hide password field for edit
   document.getElementById('password-row').style.display = 'none';
   document.getElementById('user-password').required = false;
   
-  // Load mahasiswa list
-  await loadMahasiswaForUserForm();
-  
-  // Set mahasiswa_id if exists
-  if (user.mahasiswa_id) {
-    // Add current mahasiswa to dropdown if not exists
+  // Handle mahasiswa field
+  if (user.role === 'mahasiswa' && user.mahasiswa_id) {
+    document.getElementById('mahasiswa-id-row').style.display = 'block';
     const select = document.getElementById('user-mahasiswa-id');
-    if (!Array.from(select.options).some(opt => opt.value === user.mahasiswa_id)) {
-      // Fetch mahasiswa info
-      const mhsResponse = await fetch(`${API}/mahasiswa`);
-      const mhsResult = await mhsResponse.json();
-      if (mhsResult.success) {
-        const mhs = mhsResult.data.find(m => m.id === user.mahasiswa_id);
-        if (mhs) {
-          select.innerHTML += `<option value="${mhs.id}">${mhs.id} - ${mhs.name}</option>`;
-        }
+    // Add current mahasiswa to options if not already there
+    if (!availableMahasiswaForUser.some(m => m.id === user.mahasiswa_id)) {
+      const currentMhs = await apiFetch(`/mahasiswa/${user.mahasiswa_id}`);
+      if (currentMhs && currentMhs.success) {
+        select.innerHTML = `<option value="${user.mahasiswa_id}" selected>${user.mahasiswa_id} - ${currentMhs.data.name}</option>` + select.innerHTML;
       }
+    } else {
+      select.value = user.mahasiswa_id;
     }
-    document.getElementById('user-mahasiswa-id').value = user.mahasiswa_id;
+    select.disabled = true; // Mahasiswa ID tidak bisa diubah
   }
   
-  toggleMahasiswaField();
+  document.getElementById('modal-user-title').textContent = 'Edit User';
   document.getElementById('modal-user').classList.add('show');
 }
 
-// Submit user (create or update)
 async function submitUser(event) {
   event.preventDefault();
   
   const userId = document.getElementById('user-id').value;
-  const username = document.getElementById('user-username').value.trim();
-  const password = document.getElementById('user-password').value;
-  const fullName = document.getElementById('user-fullname').value.trim();
-  const email = document.getElementById('user-email').value.trim();
-  const role = document.getElementById('user-role').value;
-  const mahasiswaId = document.getElementById('user-mahasiswa-id').value;
+  const isEdit = !!userId;
   
-  // Validation
-  if (!username || !fullName || !role) {
-    toast('Error', 'Username, Nama Lengkap, dan Role wajib diisi', true);
-    return;
-  }
+  const data = {
+    username: document.getElementById('user-username').value.trim(),
+    full_name: document.getElementById('user-fullname').value.trim(),
+    email: document.getElementById('user-email').value.trim(),
+    role: document.getElementById('user-role').value
+  };
   
-  if (!userId && !password) {
-    toast('Error', 'Password wajib diisi untuk user baru', true);
-    return;
-  }
-  
-  if (password && password.length < 6) {
-    toast('Error', 'Password minimal 6 karakter', true);
-    return;
-  }
-  
-  if (role === 'mahasiswa' && !mahasiswaId) {
-    toast('Error', 'Mahasiswa ID wajib diisi untuk role Mahasiswa', true);
-    return;
-  }
-  
-  try {
-    const token = getAuthToken();
-    const url = userId ? `${API}/users/${userId}` : `${API}/users`;
-    const method = userId ? 'PUT' : 'POST';
-    
-    const body = {
-      full_name: fullName,
-      email: email || null
-    };
-    
-    // Only include these fields when creating new user
-    if (!userId) {
-      body.username = username;
-      body.password = password;
-      body.role = role;
-      if (role === 'mahasiswa') {
-        body.mahasiswa_id = mahasiswaId;
-      }
+  // Add password for new user
+  if (!isEdit) {
+    const password = document.getElementById('user-password').value;
+    if (password.length < 6) {
+      toast('Password minimal 6 karakter', '', true);
+      return;
     }
-    
-    const response = await fetch(url, {
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      toast('Berhasil', userId ? 'User berhasil diupdate' : 'User berhasil ditambahkan');
-      document.getElementById('modal-user').classList.remove('show');
-      loadUsers();
-    } else {
-      toast('Error', result.message, true);
+    data.password = password;
+  }
+  
+  // Add mahasiswa_id if role is mahasiswa
+  if (data.role === 'mahasiswa') {
+    data.mahasiswa_id = document.getElementById('user-mahasiswa-id').value;
+    if (!data.mahasiswa_id) {
+      toast('Pilih mahasiswa terlebih dahulu', '', true);
+      return;
     }
-  } catch (error) {
-    console.error('Error submitting user:', error);
-    toast('Error', 'Gagal menyimpan user', true);
+  }
+  
+  // Submit
+  const url = isEdit ? `/users/${userId}` : '/users';
+  const method = isEdit ? 'PUT' : 'POST';
+  
+  const res = await apiFetch(url, {
+    method: method,
+    body: JSON.stringify(data)
+  });
+  
+  if (res && res.success) {
+    toast(isEdit ? 'User berhasil diupdate' : 'User berhasil dibuat');
+    closeModal('modal-user');
+    loadUsers();
+    
+    // Re-enable fields
+    document.getElementById('user-username').disabled = false;
+    document.getElementById('user-role').disabled = false;
+    document.getElementById('user-mahasiswa-id').disabled = false;
+  } else {
+    toast('Gagal menyimpan user', res?.message || '', true);
   }
 }
 
-// Toggle user status (activate/deactivate)
-async function toggleUserStatus(userId, newStatus) {
-  const action = newStatus === 1 ? 'mengaktifkan' : 'menonaktifkan';
+async function toggleUserStatus(userId, activate) {
+  const action = activate ? 'activate' : 'deactivate';
+  const confirmMsg = activate 
+    ? 'Aktifkan user ini?' 
+    : 'Nonaktifkan user ini? User tidak akan bisa login.';
   
-  if (!confirm(`Apakah Anda yakin ingin ${action} user ini?`)) {
-    return;
-  }
+  if (!confirm(confirmMsg)) return;
   
-  try {
-    const token = getAuthToken();
-    const endpoint = newStatus === 1 ? 'activate' : 'deactivate';
-    
-    const response = await fetch(`${API}/users/${userId}/${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      toast('Berhasil', `User berhasil ${newStatus === 1 ? 'diaktifkan' : 'dinonaktifkan'}`);
-      loadUsers();
-    } else {
-      toast('Error', result.message, true);
-    }
-  } catch (error) {
-    console.error('Error toggling user status:', error);
-    toast('Error', `Gagal ${action} user`, true);
+  const res = await apiFetch(`/users/${userId}/${action}`, { method: 'POST' });
+  
+  if (res && res.success) {
+    toast(activate ? 'User berhasil diaktifkan' : 'User berhasil dinonaktifkan');
+    loadUsers();
+  } else {
+    toast('Gagal mengubah status user', res?.message || '', true);
   }
 }
 
-// Reset user password
-async function resetUserPassword(userId) {
-  const user = usersData.find(u => u.id === userId);
-  if (!user) return;
+function openResetPasswordModal(userId, username) {
+  document.getElementById('reset-user-id').value = userId;
+  document.getElementById('reset-username').textContent = username;
+  document.getElementById('reset-password-form').reset();
+  document.getElementById('modal-reset-password').classList.add('show');
+}
+
+async function submitResetPassword(event) {
+  event.preventDefault();
   
-  const newPassword = prompt(`Reset password untuk user: ${user.username}\n\nMasukkan password baru (minimal 6 karakter):`);
-  
-  if (!newPassword) return;
+  const userId = document.getElementById('reset-user-id').value;
+  const newPassword = document.getElementById('reset-new-password').value;
+  const confirmPassword = document.getElementById('reset-confirm-password').value;
   
   if (newPassword.length < 6) {
-    toast('Error', 'Password minimal 6 karakter', true);
+    toast('Password minimal 6 karakter', '', true);
     return;
   }
   
-  try {
-    const token = getAuthToken();
-    
-    // We need to use admin privilege to reset password
-    // This requires a new endpoint in api_server.py
-    const response = await fetch(`${API}/users/${userId}/reset-password`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ new_password: newPassword })
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      toast('Berhasil', 'Password berhasil direset');
-    } else {
-      toast('Error', result.message, true);
-    }
-  } catch (error) {
-    console.error('Error resetting password:', error);
-    toast('Error', 'Gagal reset password', true);
-  }
-}
-
-// Get auth token
-function getAuthToken() {
-  return localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-}
-
-// Add users page to showPage function
-// Note: We need to modify the existing showPage function to include users page
-// This is done by checking in the existing showPage function
-
-
-// ═══════════════════════════════════════════════════════════════
-// MODAL EVENT LISTENERS
-// ═══════════════════════════════════════════════════════════════
-
-// Close modal when clicking backdrop
-document.addEventListener('DOMContentLoaded', function() {
-  // Close modal user when clicking backdrop
-  const modalUser = document.getElementById('modal-user');
-  if (modalUser) {
-    modalUser.addEventListener('click', function(e) {
-      if (e.target === modalUser) {
-        modalUser.classList.remove('show');
-      }
-    });
+  if (newPassword !== confirmPassword) {
+    toast('Password tidak cocok', '', true);
+    return;
   }
   
-  // Close modal mahasiswa when clicking backdrop (if not already handled)
-  const modalMahasiswa = document.getElementById('modal-mahasiswa');
-  if (modalMahasiswa) {
-    modalMahasiswa.addEventListener('click', function(e) {
-      if (e.target === modalMahasiswa) {
-        modalMahasiswa.classList.remove('show');
-      }
-    });
+  const res = await apiFetch(`/users/${userId}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword })
+  });
+  
+  if (res && res.success) {
+    toast('Password berhasil direset');
+    closeModal('modal-reset-password');
+  } else {
+    toast('Gagal reset password', res?.message || '', true);
   }
-});
+}
