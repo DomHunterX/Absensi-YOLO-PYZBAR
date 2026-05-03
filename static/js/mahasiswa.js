@@ -1,122 +1,36 @@
-const API = 'http://localhost:5000/api';
+const API = '/api';
 let mahasiswaData = [];
 let currentMahasiswa = null; // Store current logged-in mahasiswa
 
-// ─── Authentication Check & URL Cleanup ────────────────────────────────────
-(function() {
-  // Get token from URL query parameter
-  const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get('token');
+// ─── Authentication Check ────────────────────────────────────────────────
+// Require mahasiswa role for this page
+AuthModule.requireAuth('mahasiswa', function(user) {
+  // Authentication successful
+  console.log('[Mahasiswa Portal] User authenticated:', user.username);
   
-  // If token in URL, save to sessionStorage and clean URL
-  if (tokenFromUrl) {
-    sessionStorage.setItem('session_token', tokenFromUrl);
-    // Clean URL without reloading page
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }
-  
-  // Check if user is authenticated
-  const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-  
-  if (!token) {
-    // No token, redirect to login
-    window.location.href = '/login';
-    return;
-  }
-  
-  // Validate token with server and get current user
-  fetch(API + '/auth/me', {
-    headers: { 
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include'
-  })
-  .then(res => res.json())
-  .then(result => {
-    if (!result.success) {
-      // Invalid token, clear storage and redirect to login
-      localStorage.removeItem('session_token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('session_token');
-      sessionStorage.removeItem('user');
-      window.location.href = '/login';
+  // Check if user has mahasiswa data
+  if (user.mahasiswa) {
+    currentMahasiswa = user.mahasiswa;
+    console.log('[Mahasiswa Portal] Mahasiswa data loaded:', currentMahasiswa.name);
+    
+    // Initialize portal when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initializeMahasiswaPortal);
     } else {
-      // Store current user
-      const user = result.data;
-      
-      console.log('[AUTH] User data received:', user);
-      
-      // Check if user is mahasiswa
-      if (user.role === 'mahasiswa') {
-        if (user.mahasiswa) {
-          // Store mahasiswa data
-          currentMahasiswa = user.mahasiswa;
-          console.log('[AUTH] Current mahasiswa loaded:', currentMahasiswa);
-          
-          // Wait for DOM to be ready before initializing
-          if (document.readyState === 'loading') {
-            console.log('[AUTH] Waiting for DOM...');
-            document.addEventListener('DOMContentLoaded', function() {
-              console.log('[AUTH] DOM ready, initializing portal...');
-              initializeMahasiswaPortal();
-            });
-          } else {
-            console.log('[AUTH] DOM already ready, initializing portal now...');
-            // DOM already loaded, initialize immediately
-            setTimeout(() => initializeMahasiswaPortal(), 100);
-          }
-        } else {
-          // Mahasiswa role but no mahasiswa data
-          console.error('[AUTH] ERROR: Mahasiswa role but no mahasiswa data');
-          alert('Error: Akun mahasiswa tidak terhubung dengan data mahasiswa. Hubungi administrator.');
-          window.location.href = '/login';
-        }
-      } else {
-        // Not mahasiswa role, redirect to dashboard
-        console.log('[AUTH] Not mahasiswa role, redirecting to dashboard');
-        window.location.href = '/';
-      }
+      setTimeout(initializeMahasiswaPortal, 100);
     }
-  })
-  .catch(err => {
-    console.error('Auth validation error:', err);
-    // On error, redirect to login
-    window.location.href = '/login';
-  });
-})();
+  } else {
+    // Mahasiswa role but no mahasiswa data
+    console.error('[Mahasiswa Portal] ERROR: No mahasiswa data found');
+    alert('Error: Akun mahasiswa tidak terhubung dengan data mahasiswa. Hubungi administrator.');
+    AuthModule.redirectToLogin();
+  }
+});
 
 // ─── API Helper Function ─────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
-  try {
-    // Get token from storage
-    const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-    
-    // Add Authorization header if token exists
-    const headers = {
-      ...(opts.headers || {})
-    };
-    
-    // Only add Content-Type if not FormData (FormData sets its own Content-Type with boundary)
-    if (!(opts.body instanceof FormData)) {
-      headers['Content-Type'] = 'application/json';
-    }
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(API + path, {
-      ...opts,
-      headers,
-      credentials: 'include'  // Include cookies
-    });
-    
-    return response;
-  } catch (e) {
-    console.error('API fetch error:', e);
-    throw e;
-  }
+  // Use AuthModule's apiFetch
+  return await AuthModule.apiFetch(path, opts);
 }
 
 // ─── Toast Notification ──────────────────────────────────────────────────

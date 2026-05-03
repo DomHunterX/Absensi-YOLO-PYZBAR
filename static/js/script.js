@@ -1,52 +1,17 @@
-const API = 'http://localhost:5000/api';
+const API = '/api';
 
-// ─── Authentication Check & URL Cleanup ────────────────────────────────────
-(function() {
-  // Get token from URL query parameter
-  const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get('token');
+// ─── Authentication Check ────────────────────────────────────────────────
+// Require admin or timdis role for dashboard
+AuthModule.requireAuth(['admin', 'timdis'], function(user) {
+  // Authentication successful
+  console.log('[Dashboard] User authenticated:', user.username);
+  currentUser = user;
   
-  // If token in URL, save to sessionStorage and clean URL
-  if (tokenFromUrl) {
-    sessionStorage.setItem('session_token', tokenFromUrl);
-    // Clean URL without reloading page
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }
-  
-  // Check if user is authenticated
-  const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-  
-  if (!token) {
-    // No token, redirect to login
-    window.location.href = '/login';
-    return;
-  }
-  
-  // Validate token with server
-  fetch(API + '/auth/validate', {
-    headers: { 
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include'
-  })
-  .then(res => res.json())
-  .then(result => {
-    if (!result.success) {
-      // Invalid token, clear storage and redirect to login
-      localStorage.removeItem('session_token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('session_token');
-      sessionStorage.removeItem('user');
-      window.location.href = '/login';
-    }
-  })
-  .catch(err => {
-    console.error('Auth validation error:', err);
-    // On error, redirect to login
-    window.location.href = '/login';
+  // Load user permissions and initialize dashboard
+  loadUserPermissions().then(() => {
+    loadDashboard();
   });
-})();
+});
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let dashboardData = null;
@@ -162,29 +127,9 @@ function showPage(page) {
 
     // ─── API Calls ──────────────────────────────────────────────────────────────
     async function apiFetch(path, opts = {}) {
-      try {
-        // Get token from storage
-        const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-        
-        // Add Authorization header if token exists
-        const headers = {
-          'Content-Type': 'application/json',
-          ...(opts.headers || {})
-        };
-        
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        const r = await fetch(API + path, {
-          ...opts,
-          headers,
-          credentials: 'include'  // Include cookies
-        });
-        return await r.json();
-      } catch (e) {
-        return null;
-      }
+      // Use AuthModule's apiFetch
+      const response = await AuthModule.apiFetch(path, opts);
+      return await response.json();
     }
 
     // ─── Dashboard ──────────────────────────────────────────────────────────────

@@ -15,14 +15,18 @@ class DatabaseManager:
         return mysql.connector.connect(**MYSQL_CONFIG)
 
     def _execute(self, query, params=None, fetch_one=False, fetch_all=False):
-        """Execute query MySQL"""
+        """
+        Execute query MySQL with proper parameterization
+        
+        SECURITY: Uses parameterized queries to prevent SQL injection
+        Always use %s placeholders in queries, never string formatting
+        """
         conn = self._get_conn()
         cursor = conn.cursor()
         
         try:
-            # Convert ? ke %s untuk MySQL
+            # Execute with parameters (already using %s placeholders)
             if params:
-                query = query.replace('?', '%s')
                 cursor.execute(query, params)
             else:
                 cursor.execute(query)
@@ -42,6 +46,13 @@ class DatabaseManager:
                 result = cursor.lastrowid
             
             return result
+        except mysql.connector.Error as e:
+            # Log error untuk debugging
+            logger.error(f"Database error: {e}")
+            logger.error(f"Query: {query}")
+            logger.error(f"Params: {params}")
+            conn.rollback()
+            raise
         finally:
             cursor.close()
             conn.close()
