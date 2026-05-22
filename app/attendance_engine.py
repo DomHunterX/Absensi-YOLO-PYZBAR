@@ -13,7 +13,13 @@ from ultralytics import YOLO
 from PIL import Image
 import io
 import os
-from database_manager import DatabaseManager
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.database_manager import DatabaseManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,22 +49,30 @@ def load_settings():
                 'confidence': 0.3,
                 'qr_cooldown': 30
             },
-            'rtsp': {
-                'frame_width': 1080,
+            'webcam': {
+                'frame_width': 1280,
                 'frame_height': 720,
-                'frame_fps': 30,
-                'reconnect_delay': 5
+                'frame_fps': 30
             }
         }
     
     try:
         with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            settings = json.load(f)
+            # Migrate old RTSP settings to webcam settings
+            if 'rtsp' in settings and 'webcam' not in settings:
+                settings['webcam'] = {
+                    'frame_width': settings['rtsp'].get('frame_width', 1280),
+                    'frame_height': settings['rtsp'].get('frame_height', 720),
+                    'frame_fps': settings['rtsp'].get('frame_fps', 30)
+                }
+                del settings['rtsp']
+            return settings
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
         return {
             'yolo': {'model_path': 'models/qr_paper_model.pt', 'confidence': 0.3, 'qr_cooldown': 30},
-            'rtsp': {'frame_width': 1080, 'frame_height': 720, 'frame_fps': 30, 'reconnect_delay': 5}
+            'webcam': {'frame_width': 1280, 'frame_height': 720, 'frame_fps': 30}
         }
 
 # Load settings
@@ -66,10 +80,9 @@ _settings = load_settings()
 MODEL_PATH = Path(_settings['yolo'].get('model_path', 'models/qr_paper_model.pt'))
 YOLO_CONF_THRESHOLD = _settings['yolo'].get('confidence', 0.3)
 QR_COOLDOWN = _settings['yolo'].get('qr_cooldown', 30)
-FRAME_WIDTH = _settings['rtsp'].get('frame_width', 1080)
-FRAME_HEIGHT = _settings['rtsp'].get('frame_height', 720)
-FRAME_FPS = _settings['rtsp'].get('frame_fps', 30)
-RECONNECT_DELAY = _settings['rtsp'].get('reconnect_delay', 5)
+FRAME_WIDTH = _settings['webcam'].get('frame_width', 1280)
+FRAME_HEIGHT = _settings['webcam'].get('frame_height', 720)
+FRAME_FPS = _settings['webcam'].get('frame_fps', 30)
 
 class QRCodeGenerator:
     @staticmethod
@@ -118,11 +131,15 @@ class QRCodeGenerator:
                 results.append({'data': data, 'polygon': pts_arr})
         return results
 
-class RTSPCameraStream:
-    def __init__(self, camera_id: str, rtsp_url: str, name: str = ''):
+class WebcamStream:
+    """
+    Webcam stream handler untuk capture dari webcam lokal.
+    Mendukung built-in webcam dan USB webcam eksternal.
+    """
+    def __init__(self, camera_id: str, camera_index: int, name: str = ''):
         self.camera_id = camera_id
-        self.rtsp_url = rtsp_url
-        self.name = name or camera_id
+        self.camera_index = camera_index  # 0 = built-in, 1,2,3 = USB webcam
+        self.name = name or f"Camera {camera_index}"
         self.cap = None
         self.frame = None
         self.running = False
@@ -130,40 +147,70 @@ class RTSPCameraStream:
         self.fps = 0
         self.connected = False
         self._thread = None
-        self._reconnect_delay = RECONNECT_DELAY
         self._frame_count = 0
         self._last_fps_time = time.time()
 
     def _connect(self):
+        """Connect to webcam"""
         if self.cap:
             self.cap.release()
 
-        self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.cap.set(cv2.CAP_PROP_FPS, FRAME_FPS)  # Set target FPS
-
-        if self.cap.isOpened():
-            self.connected = True
-            actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
-            logger.info(f"[{self.camera_id}] Terhubung ke RTSP: {self.rtsp_url} (Target FPS: {FRAME_FPS}, Actual: {actual_fps:.1f})")
-            return True
-        else:
-            self.connected = False
-            logger.error(f"[{self.camera_id}] Gagal terhubung ke: {self.rtsp_url}")
-            return False
+        # Try DirectShow backend first (more stable on Windows)
+        # Then fallback to default backend
+        backends = [
+            (cv2.CAP_DSHOW, "DirectShow"),  # Windows DirectShow (more stable)
+            (cv2.CAP_ANY, "Default")         # Default backend
+        ]
+        
+        for backend, backend_name in backends:
+            try:
+                logger.info(f"[{self.camera_id}] Mencoba backend {backend_name}...")
+                self.cap = cv2.VideoCapture(self.camera_index, backend)
+                
+                if self.cap.isOpened():
+                    # Set webcam properties
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+                    self.cap.set(cv2.CAP_PROP_FPS, FRAME_FPS)
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    
+                    # Test read frame
+                    ret, test_frame = self.cap.read()
+                    if ret and test_frame is not None:
+                        self.connected = True
+                        actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
+                        actual_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        actual_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        logger.info(f"[{self.camera_id}] ✅ Webcam terhubung: {self.name} (Index: {self.camera_index}, Backend: {backend_name})")
+                        logger.info(f"[{self.camera_id}] Resolution: {actual_width}x{actual_height}, FPS: {actual_fps:.1f}")
+                        return True
+                    else:
+                        logger.warning(f"[{self.camera_id}] Backend {backend_name} opened but can't read frame")
+                        self.cap.release()
+                        
+            except Exception as e:
+                logger.warning(f"[{self.camera_id}] Backend {backend_name} failed: {e}")
+                if self.cap:
+                    self.cap.release()
+                continue
+        
+        # All backends failed
+        self.connected = False
+        logger.error(f"[{self.camera_id}] ❌ Gagal membuka webcam index {self.camera_index} dengan semua backend")
+        return False
 
     def _read_loop(self):
+        """Main loop untuk membaca frame dari webcam"""
         while self.running:
             if not self.connected:
                 if not self._connect():
-                    time.sleep(self._reconnect_delay)
+                    logger.error(f"[{self.camera_id}] Webcam tidak tersedia, menunggu 5 detik...")
+                    time.sleep(5)
                     continue
 
             ret, frame = self.cap.read()
             if not ret:
-                logger.warning(f"[{self.camera_id}] Frame hilang, mencoba reconnect...")
+                logger.warning(f"[{self.camera_id}] Gagal membaca frame, mencoba reconnect...")
                 self.connected = False
                 time.sleep(1)
                 continue
@@ -171,6 +218,7 @@ class RTSPCameraStream:
             with self.lock:
                 self.frame = frame
 
+            # Calculate FPS
             self._frame_count += 1
             elapsed = time.time() - self._last_fps_time
             if elapsed >= 1.0:
@@ -179,18 +227,21 @@ class RTSPCameraStream:
                 self._last_fps_time = time.time()
 
     def start(self):
+        """Start webcam stream"""
         self.running = True
         self._thread = threading.Thread(target=self._read_loop, daemon=True)
         self._thread.start()
-        logger.info(f"[{self.camera_id}] Stream dimulai.")
+        logger.info(f"[{self.camera_id}] Webcam stream dimulai: {self.name}")
 
     def stop(self):
+        """Stop webcam stream"""
         self.running = False
         if self.cap:
             self.cap.release()
-        logger.info(f"[{self.camera_id}] Stream dihentikan.")
+        logger.info(f"[{self.camera_id}] Webcam stream dihentikan: {self.name}")
 
     def get_frame(self) -> tuple[bool, np.ndarray | None]:
+        """Get latest frame from webcam"""
         with self.lock:
             if self.frame is None:
                 return False, None
@@ -279,18 +330,28 @@ class AttendanceProcessor:
     def __init__(self, db: DatabaseManager, yolo: YOLOProcessor):
         self.db = db
         self.yolo = yolo
-        self.cameras: dict[str, RTSPCameraStream] = {}
+        self.cameras: dict[str, WebcamStream] = {}  # Changed from RTSPCameraStream
         self._qr_cooldowns: dict[str, float] = {}
         self._processing = False
         self._lock = threading.Lock()
         self.latest_frames = {}
 
-    def add_camera(self, camera_id: str, rtsp_url: str, name: str = '', location: str = ''):
-        stream = RTSPCameraStream(camera_id, rtsp_url, name)
+    def add_camera(self, camera_id: str, camera_index: int, name: str = '', location: str = ''):
+        """
+        Add webcam to the system.
+        
+        Args:
+            camera_id: Unique identifier for the camera (e.g., 'CAM-01')
+            camera_index: Webcam index (0 = built-in, 1,2,3 = USB webcam)
+            name: Display name for the camera
+            location: Physical location of the camera
+        """
+        stream = WebcamStream(camera_id, camera_index, name)
         stream.start()
         self.cameras[camera_id] = stream
-        self.db.add_camera(camera_id, name or camera_id, rtsp_url, location)
-        logger.info(f"Kamera '{name}' ({camera_id}) ditambahkan.")
+        # Store camera_index as string in database for compatibility
+        self.db.add_camera(camera_id, name or f"Camera {camera_index}", str(camera_index), location)
+        logger.info(f"Webcam '{name}' (Index: {camera_index}) ditambahkan sebagai {camera_id}.")
 
     def _is_qr_cooldown(self, qr_data: str) -> bool:
         last_scan = self._qr_cooldowns.get(qr_data, 0)
@@ -453,7 +514,7 @@ def create_system() -> tuple[DatabaseManager, YOLOProcessor, AttendanceProcessor
 
 if __name__ == '__main__':
     print("="*60)
-    print("  SISTEM ABSENSI QR CODE PAPER + YOLO + RTSP CCTV")
+    print("  SISTEM ABSENSI QR CODE PAPER + YOLO + WEBCAM")
     print("  Mode: Deteksi QR Code Paper (Custom YOLO Model)")
     print("="*60)
     print("\n⚠️  CATATAN PENTING:")
@@ -468,12 +529,13 @@ if __name__ == '__main__':
     qr_id = db.add_mahasiswa('MHS001', 'Budi Santoso', 'A', 'Teknik Informatika')
     db.add_mahasiswa('MHS002', 'Siti Rahayu', 'B', 'Sistem Informasi')
 
-
-# RTSP CCTV
+    # Webcam (built-in atau USB)
+    # Index 0 = Webcam built-in laptop
+    # Index 1, 2, 3 = USB webcam eksternal
     processor.add_camera(
         camera_id='CAM-01',
-        rtsp_url='rtsp://admin:admin123456@192.168.1.91:8554/profile0',
-        name='Pintu Utama',
+        camera_index=0,  # 0 = built-in webcam
+        name='Webcam Built-in',
         location='Lobby Lantai 1'
     )
 

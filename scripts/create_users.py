@@ -3,9 +3,14 @@ Script untuk membuat users secara batch
 Berguna untuk setup awal sistem
 """
 
-from database_manager import DatabaseManager
-from auth_manager import AuthManager
 import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.database_manager import DatabaseManager
+from app.auth_manager import AuthManager
 
 def create_default_users():
     """Buat default users untuk testing dan development"""

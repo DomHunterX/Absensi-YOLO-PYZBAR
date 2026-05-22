@@ -1,7 +1,13 @@
 import mysql.connector
 from datetime import datetime, date
 import logging
-from config_db import MYSQL_CONFIG
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.config_db import MYSQL_CONFIG
 
 logger = logging.getLogger('DatabaseManager')
 

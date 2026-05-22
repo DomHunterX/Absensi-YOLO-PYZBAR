@@ -24,7 +24,7 @@
           <img src="static/img/logo.png" alt="Logo" class="logo-icon">
           <div>
             <div class="logo-text">SIABSEN</div>
-            <div class="logo-sub">v2.4</div>
+            <div class="logo-sub">v2.5</div>
           </div>
         </div>
       </div>
@@ -59,6 +59,9 @@
           <span class="badge badge-warning" id="sidebar-pending-kehadiran">0</span>
         </div>
         <div class="nav-section">Sistem</div>
+        <div class="nav-item" onclick="showPage('cameras')">
+          <span class="material-symbols-outlined icon">videocam</span> Kelola Kamera
+        </div>
         <div class="nav-item" onclick="showPage('users')">
           <span class="material-symbols-outlined icon">manage_accounts</span> User Management
         </div>
@@ -562,6 +565,29 @@
         </div>
       </section>
 
+      <!-- ===== KELOLA KAMERA PAGE ===== -->
+      <section id="page-cameras" style="display:none">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Kelola Kamera Webcam</div>
+            <div class="page-sub">Manajemen webcam untuk deteksi QR Code</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddCamera()">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">add</span>
+            Tambah Webcam
+          </button>
+        </div>
+
+        <div class="panel" style="padding:20px">
+          <div id="camera-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:20px">
+            <div style="text-align:center;padding:40px;color:var(--muted);grid-column:1/-1">
+              <div class="spinner"></div>
+              <p style="margin-top:12px">Memuat kamera...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="page-settings" style="display:none">
         <div class="page-title" style="margin-bottom:20px">Pengaturan Sistem</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
@@ -589,7 +615,7 @@
             <button class="btn btn-primary btn-sm" onclick="saveYoloSettings()">Simpan Perubahan</button>
           </div>
           <div class="panel">
-            <div class="section-title" style="margin-bottom:16px">Konfigurasi RTSP</div>
+            <div class="section-title" style="margin-bottom:16px">Konfigurasi Webcam</div>
             <div class="form-row">
               <label class="form-label">Frame Width</label>
               <input id="setting-frame-width" class="form-input" type="number" value="1280" min="320" max="3840">
@@ -602,11 +628,7 @@
               <label class="form-label">Frame FPS</label>
               <input id="setting-frame-fps" class="form-input" type="number" value="30" min="1" max="60">
             </div>
-            <div class="form-row">
-              <label class="form-label">Reconnect Delay (detik)</label>
-              <input id="setting-reconnect-delay" class="form-input" type="number" value="5" min="1" max="30">
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="saveRtspSettings()">Simpan Perubahan</button>
+            <button class="btn btn-primary btn-sm" onclick="saveWebcamSettings()">Simpan Perubahan</button>
           </div>
           <div class="panel" style="grid-column:1/-1">
             <div class="section-title" style="margin-bottom:16px">Tentang Sistem</div>
@@ -615,7 +637,7 @@
                 (cls 0)</div>
               <div><strong style="color:var(--text)">QR Code</strong><br>Generator: qrcode[pil]<br>Decoder: pyzbar
                 (libzbar)</div>
-              <div><strong style="color:var(--text)">Stream Video</strong><br>Protokol: RTSP/FFMPEG<br>OpenCV CAP_FFMPEG
+              <div><strong style="color:var(--text)">Stream Video</strong><br>Protokol: Webcam (OpenCV)<br>Built-in & USB Webcam
               </div>
               <div><strong style="color:var(--text)">Database</strong><br>MySQL<br>Thread-safe dengan lock
               </div>
@@ -1018,6 +1040,55 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeModal('modal-browse-models')">Batal</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal Add/Edit Camera -->
+  <div class="modal-backdrop" id="modal-camera">
+    <div class="modal">
+      <div class="modal-title" id="camera-modal-title">Tambah Webcam</div>
+      
+      <form onsubmit="event.preventDefault(); submitCamera();">
+        <div class="form-row">
+          <label class="form-label">ID Kamera *</label>
+          <input type="text" id="c-id" class="form-input" placeholder="CAM-01" required>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+            ID unik untuk kamera (contoh: CAM-01, CAM-02)
+          </small>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Nama Kamera *</label>
+          <input type="text" id="c-name" class="form-input" placeholder="Kamera Pintu Masuk" required>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Webcam Index *</label>
+          <select id="c-webcam-index" class="form-input" required>
+            <option value="">-- Pilih Webcam --</option>
+            <option value="0">Webcam 0 (Built-in)</option>
+            <option value="1">Webcam 1 (USB)</option>
+            <option value="2">Webcam 2 (USB)</option>
+            <option value="3">Webcam 3 (USB)</option>
+          </select>
+          <small style="font-size:11px;color:var(--muted);margin-top:4px;display:block">
+            Index 0 = Built-in webcam, 1-3 = USB webcam eksternal
+          </small>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Lokasi</label>
+          <input type="text" id="c-loc" class="form-input" placeholder="Pintu Masuk Utama">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-camera')">Batal</button>
+          <button type="submit" class="btn btn-primary" id="camera-submit-btn">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle">save</span>
+            Simpan
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 

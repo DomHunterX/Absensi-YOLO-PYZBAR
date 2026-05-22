@@ -1,72 +1,21 @@
-const API = 'http://localhost:5000/api';
+const API = '/api';
 let mahasiswaData = [];
 let currentMahasiswa = null; // Store current logged-in mahasiswa
 
-// ─── Authentication Check & URL Cleanup ────────────────────────────────────
-(function() {
-  // Get token from URL query parameter
-  const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get('token');
-  
-  // If token in URL, save to sessionStorage and clean URL
-  if (tokenFromUrl) {
-    sessionStorage.setItem('session_token', tokenFromUrl);
-    // Clean URL without reloading page
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }
-  
-  // Check if user is authenticated
-  const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-  
-  if (!token) {
-    // No token, redirect to login
-    window.location.href = '/login';
-    return;
-  }
-  
-  // Validate token with server
-  fetch(API + '/auth/validate', {
-    headers: { 
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include'
-  })
-  .then(res => res.json())
-  .then(result => {
-    if (!result.success) {
-      // Invalid token, clear storage and redirect to login
-      localStorage.removeItem('session_token');
-      localStorage.removeItem('user');
-      sessionStorage.removeItem('session_token');
-      sessionStorage.removeItem('user');
-      window.location.href = '/login';
-      return;
-    }
-    
-    // Check if user has mahasiswa role and data
-    return fetch(API + '/auth/me', {
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include'
-    });
-  })
-  .then(res => {
-    if (!res) return;
-    return res.json();
-  })
-  .then(result => {
-    if (!result || !result.success) {
-      console.error('[Mahasiswa Portal] Failed to load user data');
-      window.location.href = '/login';
-      return;
-    }
+// ─── Authentication Check ────────────────────────────────────────────────
+// Wait for AuthModule to be loaded
+if (typeof AuthModule === 'undefined') {
+  console.error('[Mahasiswa Portal] AuthModule not loaded! Redirecting to login...');
+  window.location.href = '/login';
+} else {
+  // Require mahasiswa role for this page
+  AuthModule.requireAuth('mahasiswa', function(user) {
+    // Authentication successful
+    console.log('[Mahasiswa Portal] User authenticated:', user.username);
     
     // Check if user has mahasiswa data
-    if (result.data && result.data.mahasiswa) {
-      currentMahasiswa = result.data.mahasiswa;
+    if (user.mahasiswa) {
+      currentMahasiswa = user.mahasiswa;
       console.log('[Mahasiswa Portal] Mahasiswa data loaded:', currentMahasiswa.name);
       
       // Initialize portal when DOM is ready
@@ -76,45 +25,18 @@ let currentMahasiswa = null; // Store current logged-in mahasiswa
         setTimeout(initializeMahasiswaPortal, 100);
       }
     } else {
-      // User authenticated but no mahasiswa data
+      // Mahasiswa role but no mahasiswa data
       console.error('[Mahasiswa Portal] ERROR: No mahasiswa data found');
       alert('Error: Akun mahasiswa tidak terhubung dengan data mahasiswa. Hubungi administrator.');
-      window.location.href = '/login';
+      AuthModule.redirectToLogin();
     }
-  })
-  .catch(err => {
-    console.error('Auth validation error:', err);
-    // On error, redirect to login
-    window.location.href = '/login';
   });
-})();
+}
 
 // ─── API Helper Function ─────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
-  try {
-    // Get token from storage
-    const token = localStorage.getItem('session_token') || sessionStorage.getItem('session_token');
-    
-    // Add Authorization header if token exists
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(opts.headers || {})
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const r = await fetch(API + path, {
-      ...opts,
-      headers,
-      credentials: 'include'  // Include cookies
-    });
-    return await r.json();
-  } catch (e) {
-    console.error('API fetch error:', e);
-    return null;
-  }
+  // Use AuthModule's apiFetch
+  return await AuthModule.apiFetch(path, opts);
 }
 
 // ─── Toast Notification ──────────────────────────────────────────────────
@@ -635,12 +557,6 @@ async function loadDashboardData() {
       document.getElementById('stat-bulan-ini').textContent = stats.hadirBulanIni || 0;
       document.getElementById('stat-izin-sakit').textContent = stats.totalIzin || 0;
       document.getElementById('stat-tidak-hadir').textContent = stats.tidakHadir || 0;
-      
-      // Update additional stats
-      document.getElementById('stat-percentage').textContent = `${stats.persentaseKehadiran || 0}%`;
-      document.getElementById('stat-avg-duration').textContent = stats.rataRataDurasi || '0 jam';
-      document.getElementById('stat-longest-streak').textContent = `${stats.streakTerpanjang || 0} hari`;
-      document.getElementById('stat-late-count').textContent = `${stats.terlambat || 0} kali`;
       
       // Load charts
       loadAttendanceChart(mahasiswaId);

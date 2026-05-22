@@ -122,7 +122,7 @@ function showPage(page) {
       document.getElementById('page-' + page).style.display = '';
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => {
-        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'users' ? 'user management' : page === 'cameras' ? 'kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi izin' : page === 'kehadiran-timdis' ? 'verifikasi kehadiran' : 'pengaturan'))
+        if (n.textContent.toLowerCase().includes(page === 'dashboard' ? 'dash' : page === 'attendance' ? 'absensi' : page === 'users' ? 'user management' : page === 'cameras' ? 'kelola kamera' : page === 'mahasiswa' ? 'mahasiswa' : page === 'history' ? 'riwayat' : page === 'video-upload' ? 'upload video' : page === 'izin-mahasiswa' ? 'form pengajuan' : page === 'izin-timdis' ? 'verifikasi izin' : page === 'kehadiran-timdis' ? 'verifikasi kehadiran' : 'pengaturan'))
           n.classList.add('active');
       });
       currentPage = page;
@@ -584,6 +584,7 @@ async function removeMahasiswa(id) {
       grid.innerHTML = list.map(cam => {
         const online = cam.is_active;
         const lastSeen = cam.last_seen ? new Date(cam.last_seen).toLocaleTimeString('id-ID') : '—';
+        const webcamIndex = cam.rtsp_url; // rtsp_url field now stores webcam index
         return `<div class="camera-card">
       <div class="camera-feed">
         ${online ? `<img src="/api/stream/${cam.id}" style="position:absolute; width:100%; height:100%; object-fit:cover; z-index:2;" onerror="this.style.display='none'">` : ''}
@@ -591,7 +592,7 @@ async function removeMahasiswa(id) {
         <div class="feed-placeholder">
           <span class="material-symbols-outlined feed-icon">videocam</span>
           <div class="feed-text">${cam.name}</div>
-          <div class="feed-rtsp">${cam.rtsp_url}</div>
+          <div class="feed-rtsp">Webcam Index: ${webcamIndex}</div>
           ${online ? `<div style="margin-top:8px"><span class="badge badge-green" style="font-size:11px">● LIVE</span></div>` : `<div style="margin-top:8px"><span class="badge badge-gray" style="font-size:11px">OFFLINE</span></div>`}
         </div>
       </div>
@@ -613,6 +614,13 @@ async function removeMahasiswa(id) {
       </div>
     </div>`;
       }).join('');
+    }
+
+    function getDemoCameras() {
+      return [
+        { id: 'CAM-01', name: 'Kamera Pintu Masuk', rtsp_url: '0', location: 'Pintu Masuk Utama', is_active: 1, last_seen: new Date().toISOString() },
+        { id: 'CAM-02', name: 'Kamera Ruang Kelas', rtsp_url: '1', location: 'Ruang Kelas A', is_active: 0, last_seen: null },
+      ];
     }
 
     // ─── History ─────────────────────────────────────────────────────────────────
@@ -997,11 +1005,45 @@ async function removeMahasiswa(id) {
 
     function openAddCamera() {
       editingCameraId = null;
-      document.getElementById('camera-modal-title').textContent = 'Tambah Kamera CCTV';
+      document.getElementById('camera-modal-title').textContent = 'Tambah Webcam';
       document.getElementById('camera-submit-btn').textContent = 'Tambah Kamera';
       document.getElementById('c-id').disabled = false;
-      ['c-id', 'c-name', 'c-rtsp', 'c-loc'].forEach(id => document.getElementById(id).value = '');
+      ['c-id', 'c-name', 'c-webcam-index', 'c-loc'].forEach(id => document.getElementById(id).value = '');
+      
+      // Load available webcams
+      detectAvailableWebcams();
+      
       document.getElementById('modal-camera').classList.add('show');
+    }
+
+    async function detectAvailableWebcams() {
+      try {
+        const res = await apiFetch('/cameras/available');
+        if (res?.success) {
+          const select = document.getElementById('c-webcam-index');
+          
+          // Handle both array of objects and array of integers
+          if (res.data.length > 0) {
+            select.innerHTML = res.data.map(webcam => {
+              // If webcam is an object with index property
+              if (typeof webcam === 'object' && webcam.index !== undefined) {
+                const label = webcam.name || `Webcam ${webcam.index}`;
+                const info = webcam.resolution ? ` (${webcam.resolution})` : '';
+                return `<option value="${webcam.index}">${label}${info}</option>`;
+              }
+              // If webcam is just a number
+              else {
+                return `<option value="${webcam}">Webcam ${webcam}</option>`;
+              }
+            }).join('');
+          } else {
+            select.innerHTML = '<option value="">Tidak ada webcam terdeteksi</option>';
+            toast('Tidak ada webcam', 'Pastikan webcam terhubung', true);
+          }
+        }
+      } catch (e) {
+        console.error('Error detecting webcams:', e);
+      }
     }
 
     function editCamera(cameraId) {
@@ -1009,13 +1051,17 @@ async function removeMahasiswa(id) {
       if (!cam) return;
       
       editingCameraId = cameraId;
-      document.getElementById('camera-modal-title').textContent = 'Edit Kamera CCTV';
+      document.getElementById('camera-modal-title').textContent = 'Edit Webcam';
       document.getElementById('camera-submit-btn').textContent = 'Simpan Perubahan';
       document.getElementById('c-id').value = cam.id;
       document.getElementById('c-id').disabled = true;
       document.getElementById('c-name').value = cam.name;
-      document.getElementById('c-rtsp').value = cam.rtsp_url;
+      document.getElementById('c-webcam-index').value = cam.rtsp_url; // rtsp_url stores webcam index
       document.getElementById('c-loc').value = cam.location || '';
+      
+      // Load available webcams for edit mode
+      detectAvailableWebcams();
+      
       document.getElementById('modal-camera').classList.add('show');
     }
 
@@ -1067,11 +1113,11 @@ async function removeMahasiswa(id) {
       const body = {
         id: document.getElementById('c-id').value.trim(),
         name: document.getElementById('c-name').value.trim(),
-        rtsp_url: document.getElementById('c-rtsp').value.trim(),
+        camera_index: parseInt(document.getElementById('c-webcam-index').value),
         location: document.getElementById('c-loc').value.trim(),
       };
       
-      if (!body.name || !body.rtsp_url) {
+      if (!body.name || isNaN(body.camera_index)) {
         toast('Lengkapi field wajib', '', true); return;
       }
       
@@ -1426,12 +1472,11 @@ async function removeMahasiswa(id) {
           document.getElementById('setting-qr-cooldown').value = data.yolo.qr_cooldown || 30;
         }
         
-        // Populate RTSP settings
-        if (data.rtsp) {
-          document.getElementById('setting-frame-width').value = data.rtsp.frame_width || 1280;
-          document.getElementById('setting-frame-height').value = data.rtsp.frame_height || 720;
-          document.getElementById('setting-frame-fps').value = data.rtsp.frame_fps || 30;
-          document.getElementById('setting-reconnect-delay').value = data.rtsp.reconnect_delay || 5;
+        // Populate Webcam settings
+        if (data.webcam) {
+          document.getElementById('setting-frame-width').value = data.webcam.frame_width || 1280;
+          document.getElementById('setting-frame-height').value = data.webcam.frame_height || 720;
+          document.getElementById('setting-frame-fps').value = data.webcam.frame_fps || 30;
         }
         
         // Disable editing for non-admin users
@@ -1484,16 +1529,15 @@ async function removeMahasiswa(id) {
       }
     }
 
-    async function saveRtspSettings() {
+    async function saveWebcamSettings() {
       const settings = {
         frame_width: parseInt(document.getElementById('setting-frame-width').value),
         frame_height: parseInt(document.getElementById('setting-frame-height').value),
-        frame_fps: parseInt(document.getElementById('setting-frame-fps').value),
-        reconnect_delay: parseInt(document.getElementById('setting-reconnect-delay').value)
+        frame_fps: parseInt(document.getElementById('setting-frame-fps').value)
       };
       
       try {
-        const res = await fetch('/api/settings/rtsp', {
+        const res = await fetch('/api/settings/webcam', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(settings)
@@ -1501,7 +1545,7 @@ async function removeMahasiswa(id) {
         
         if (!res.ok) throw new Error('Failed to save settings');
         const data = await res.json();
-        toast('Pengaturan RTSP disimpan', 'Restart kamera untuk menerapkan perubahan');
+        toast('Pengaturan Webcam disimpan', 'Restart kamera untuk menerapkan perubahan');
       } catch (e) {
         toast('Gagal menyimpan', e.message, true);
       }
